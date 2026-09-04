@@ -91,6 +91,8 @@ No `OPENAI_API_KEY`? Diagnosis/intervention fall back to a deterministic rule-ba
 
 `POST /invoices/{id}/simulate-payment` stands in for a real payment webhook, so "customer pays → case closes" is actually demonstrable end-to-end.
 
+A promise-to-pay that goes unfulfilled is treated as a hard fact, not left for the LLM to notice: `POST /recovery-cases/detect-overdue` also resolves any pending promise whose date has passed — marking it `FULFILLED` if the invoice got paid, `BROKEN` if not — and a broken promise **forces escalation** on the case's next cycle, overriding whatever the agent recommends, the same way the high-value/overdue rule does.
+
 ## Why these boundaries (V1 scope)
 
 This is a portfolio project, not a startup MVP or a production system, so scope is deliberately narrow and deep rather than broad and shallow:
@@ -156,7 +158,7 @@ Built and verified incrementally, phase by phase — each phase has explicit acc
 - [x] **Phase 7** — LangGraph recovery workflow, including the diagnosis agent, intervention agent, deterministic policy engine, and mock action tools (originally separate Phases 8-11 — built together since a graph with stub nodes isn't runnable; see [docs/architecture.md](docs/architecture.md))
 - [ ] Phase 10 — Deterministic policy engine *(deepen: configurable thresholds)*
 - [ ] Phase 11 — Mock recovery/action tools *(deepen: cleaner provider-swap abstraction)*
-- [ ] Phase 12 — Outcome tracking + promise-to-pay *(deepen: promise-expiry handling)*
+- [x] **Phase 12** — Outcome tracking + promise-to-pay: broken/fulfilled promise detection, forced escalation on a broken promise
 - [ ] Phase 13 — Kafka event integration
 - [ ] Phase 14 — Redis / idempotency / state management
 - [ ] Phase 15 — Next.js dashboard

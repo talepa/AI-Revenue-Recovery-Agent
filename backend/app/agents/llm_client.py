@@ -65,6 +65,17 @@ def _rule_based_diagnosis(invoice_context: dict, customer_context: dict) -> Diag
     days_overdue = invoice_context["days_overdue"]
     num_late = customer_context["num_prior_late_payments"]
     num_on_time = customer_context["num_prior_on_time_payments"]
+    promise = customer_context.get("promise_to_pay")
+
+    if promise and promise["status"] == "BROKEN":
+        return DiagnosisResult(
+            diagnosis="Customer broke a promised payment date",
+            reason=(
+                f"Promised ₹{promise['promised_amount']:,.2f} by {promise['promised_date']}, "
+                f"which passed without payment."
+            ),
+            recommended_priority="high",
+        )
 
     if num_late >= 2 and num_late > num_on_time:
         return DiagnosisResult(

@@ -36,7 +36,17 @@ def evaluate_policy(
     revenue_at_risk: float,
     case_status: RecoveryCaseStatus,
     days_since_last_action: int | None,
+    has_broken_promise: bool = False,
 ) -> PolicyOutcome:
+    # A broken commitment is a hard fact, not something left to the LLM to
+    # notice — force escalation regardless of what was recommended.
+    if has_broken_promise:
+        return PolicyOutcome(
+            final_action=RecoveryActionType.ESCALATE,
+            decision=PolicyDecisionResult.APPROVED,
+            reason="Customer did not honor a promised payment date; escalation forced regardless of AI recommendation.",
+        )
+
     # Forced escalation: high value + significantly overdue overrides everything,
     # including a recommendation to WAIT or send another reminder.
     if revenue_at_risk >= HIGH_VALUE_THRESHOLD and days_overdue >= ESCALATION_DAYS_THRESHOLD:

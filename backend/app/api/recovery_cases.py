@@ -39,7 +39,8 @@ async def _load_case_detail(db: AsyncSession, case_id: UUID) -> RecoveryCase | N
 
 @router.post("/detect-overdue", response_model=DetectionSummaryOut)
 async def detect_overdue(db: AsyncSession = Depends(get_db)) -> DetectionSummaryOut:
-    """Deterministic engine trigger: mark newly-overdue invoices and open cases for them.
+    """Deterministic engine trigger: mark newly-overdue invoices, open cases for
+    them, and resolve any promise-to-pay commitments whose date has passed.
 
     Manually/cron-triggered for V1 — no long-running consumer (see docs/architecture.md).
     """
@@ -48,6 +49,8 @@ async def detect_overdue(db: AsyncSession = Depends(get_db)) -> DetectionSummary
         invoices_marked_overdue=len(result.invoices_marked_overdue),
         cases_created=len(result.cases_created),
         case_ids=[c.id for c in result.cases_created],
+        promises_fulfilled=len(result.promises_checked.fulfilled),
+        promises_broken=len(result.promises_checked.broken),
     )
 
 

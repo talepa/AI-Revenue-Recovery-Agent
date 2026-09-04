@@ -77,6 +77,21 @@ def test_high_value_and_overdue_forces_escalation_even_on_first_cycle():
     assert "forced" in outcome.reason.lower()
 
 
+def test_broken_promise_forces_escalation_regardless_of_recommendation():
+    outcome = evaluate_policy(
+        recommended_action=RecoveryActionType.WAIT,
+        reminder_count=1,
+        days_overdue=15,
+        revenue_at_risk=100_000.0,
+        case_status=RecoveryCaseStatus.MONITORING,
+        days_since_last_action=3,
+        has_broken_promise=True,
+    )
+    assert outcome.final_action == RecoveryActionType.ESCALATE
+    assert outcome.decision == PolicyDecisionResult.APPROVED
+    assert "promise" in outcome.reason.lower()
+
+
 def test_escalated_case_suppresses_further_reminders():
     outcome = evaluate_policy(
         recommended_action=RecoveryActionType.SEND_EMAIL,

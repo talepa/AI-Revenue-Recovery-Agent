@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ml.risk_model import score as score_risk
 from app.models import AuditLog, Invoice, PaymentEvent, RecoveryCase
 from app.models.enums import AuditActor, InvoiceStatus, PaymentEventType, RecoveryCaseStatus
+from app.services.promise_tracking import PromiseCheckResult, check_promises_to_pay
 from app.services.risk_context import build_risk_features
 
 # TODO(Phase 10): move into the formal deterministic policy engine config,
@@ -30,6 +31,7 @@ MAX_RECOVERY_DAYS = 90
 class DetectionResult:
     invoices_marked_overdue: list[Invoice]
     cases_created: list[RecoveryCase]
+    promises_checked: PromiseCheckResult
 
 
 async def mark_overdue_invoices(session: AsyncSession, *, today: date | None = None) -> list[Invoice]:
@@ -126,8 +128,15 @@ async def create_recovery_cases_for_overdue_invoices(session: AsyncSession) -> l
 
 
 async def run_detection(session: AsyncSession, *, today: date | None = None) -> DetectionResult:
-    """Run the full detection pass: mark overdue invoices, then open cases for them."""
+    """Run the full deterministic housekeeping pass: mark overdue invoices, open
+    cases for them, and resolve any pending promise-to-pay commitments whose
+    date has come and gone."""
     invoices_marked = await mark_overdue_invoices(session, today=today)
     cases_created = await create_recovery_cases_for_overdue_invoices(session)
+    promises_checked = await check_promises_to_pay(session, today=today)
     await session.commit()
-    return DetectionResult(invoices_marked_overdue=invoices_marked, cases_created=cases_created)
+    return DetectionResult(
+        invoices_marked_overdue=invoices_marked,
+        cases_created=cases_created,
+        promises_checked=promises_checked,
+    )

@@ -111,6 +111,8 @@ class DetectionSummaryOut(BaseModel):
     invoices_marked_overdue: int
     cases_created: int
     case_ids: list[UUID]
+    promises_fulfilled: int
+    promises_broken: int
 
 
 class RecoveryCaseDetailOut(BaseModel):
