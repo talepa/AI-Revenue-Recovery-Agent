@@ -15,17 +15,41 @@ services:
       timeout: 5s
       retries: 10
 
+  kafka:
+    image: apache/kafka:3.9.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://kafka:9092,CONTROLLER://kafka:9093,PLAINTEXT_HOST://0.0.0.0:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      CLUSTER_ID: "MTIzNDU2Nzg5MGFiY2RlZg"
+    ports:
+      # Host access (e.g. running app/events/consumer.py locally, outside Docker).
+      - "9094:9094"
+
   api:
     build:
       context: ../backend
       dockerfile: Dockerfile
     environment:
       DATABASE_URL: postgresql+asyncpg://recovery_user:recovery_pass@db:5432/recovery_db
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
+      # Not service_healthy — Kafka is a best-effort side channel (see
+      # app/events/), the API must not fail to start just because it isn't
+      # ready yet.
+      kafka:
+        condition: service_started
 
 volumes:
   db_data:

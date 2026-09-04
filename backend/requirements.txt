@@ -13,3 +13,4 @@ numpy==2.5.2
 langgraph==1.2.11
 langchain-openai==1.6.0
 langchain-core==1.6.1
+aiokafka==0.14.0

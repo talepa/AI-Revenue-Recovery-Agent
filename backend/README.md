@@ -104,3 +104,25 @@ LLM_MODEL=gpt-4o-mini   # optional, this is the default
 No code change needed — `app/agents/llm_client.py` picks whichever path is configured automatically, and `agent_decisions.model_name` always records which one actually ran.
 
 A broken promise-to-pay (see `app/services/promise_tracking.py`) forces escalation via `app/services/policy_engine.py`'s `has_broken_promise` check — same override pattern as the high-value/overdue rule, and it also feeds into the diagnosis context so the reasoning reflects it honestly.
+
+## Events (Kafka)
+
+`app/events/` publishes domain events after each successful DB commit — `invoice.overdue`, `payment.received`, `recovery.case_created`, `recovery.action_completed`, `promise_to_pay.created`, `promise_to_pay.broken`, `recovery.case_closed`. No `KAFKA_BOOTSTRAP_SERVERS` set? Events are logged instead (`app/events/log_publisher.py`) — no broker required to run the app.
+
+`docker compose up` includes Kafka (`apache/kafka:3.9.0`, KRaft mode) automatically, wired to the `api` service via `KAFKA_BOOTSTRAP_SERVERS=kafka:9092`. For local (non-Docker) dev:
+
+```bash
+cd infra && docker compose up -d kafka
+```
+
+then add to `backend/.env`:
+
+```
+KAFKA_BOOTSTRAP_SERVERS=localhost:9094   # external listener, mapped for host access
+```
+
+Watch events actually flow with the standalone demo consumer (separate from the API's request path — V1 has no long-running consumer):
+
+```bash
+python -m app.events.consumer
+```

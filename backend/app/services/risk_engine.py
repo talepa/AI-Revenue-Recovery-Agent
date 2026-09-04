@@ -16,6 +16,8 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.events import get_publisher
+from app.events import topics
 from app.ml.risk_model import score as score_risk
 from app.models import AuditLog, Invoice, PaymentEvent, RecoveryCase
 from app.models.enums import AuditActor, InvoiceStatus, PaymentEventType, RecoveryCaseStatus
@@ -135,6 +137,45 @@ async def run_detection(session: AsyncSession, *, today: date | None = None) -> 
     cases_created = await create_recovery_cases_for_overdue_invoices(session)
     promises_checked = await check_promises_to_pay(session, today=today)
     await session.commit()
+
+    # Publish only after the commit succeeds — the DB write is the source of
+    # truth, Kafka is a best-effort broadcast on top of it.
+    publisher = get_publisher()
+    for invoice in invoices_marked:
+        await publisher.publish(
+            topics.INVOICE_OVERDUE,
+            str(invoice.id),
+            {
+                "invoice_id": str(invoice.id),
+                "invoice_number": invoice.invoice_number,
+                "company_id": str(invoice.company_id),
+                "due_date": invoice.due_date.isoformat(),
+                "amount_total": str(invoice.amount_total),
+            },
+        )
+    for case in cases_created:
+        await publisher.publish(
+            topics.RECOVERY_CASE_CREATED,
+            str(case.id),
+            {
+                "case_id": str(case.id),
+                "invoice_id": str(case.invoice_id),
+                "company_id": str(case.company_id),
+                "revenue_at_risk": str(case.revenue_at_risk),
+            },
+        )
+    for promise in promises_checked.broken:
+        await publisher.publish(
+            topics.PROMISE_TO_PAY_BROKEN,
+            str(promise.id),
+            {
+                "promise_id": str(promise.id),
+                "recovery_case_id": str(promise.recovery_case_id),
+                "promised_amount": str(promise.promised_amount),
+                "promised_date": promise.promised_date.isoformat(),
+            },
+        )
+
     return DetectionResult(
         invoices_marked_overdue=invoices_marked,
         cases_created=cases_created,

@@ -93,6 +93,10 @@ No `OPENAI_API_KEY`? Diagnosis/intervention fall back to a deterministic rule-ba
 
 A promise-to-pay that goes unfulfilled is treated as a hard fact, not left for the LLM to notice: `POST /recovery-cases/detect-overdue` also resolves any pending promise whose date has passed — marking it `FULFILLED` if the invoice got paid, `BROKEN` if not — and a broken promise **forces escalation** on the case's next cycle, overriding whatever the agent recommends, the same way the high-value/overdue rule does.
 
+## Events (Kafka)
+
+Every important fact the app produces — an invoice going overdue, a case opening, an action completing, a promise breaking, a case closing — is also broadcast as a domain event ([backend/app/events](backend/app/events)), Postgres-first: the DB write commits, *then* the event publishes, so a Kafka hiccup can never lose or block the underlying business fact. No `KAFKA_BOOTSTRAP_SERVERS` configured? Events are logged instead of published — same zero-setup fallback pattern as the LLM. `docker compose up` includes a real single-node Kafka broker (KRaft mode, no Zookeeper); `python -m app.events.consumer` is a standalone script that proves messages actually flow, since nothing in the app itself consumes them — this is a broadcast for future systems to plug into, not something the app depends on internally.
+
 ## Why these boundaries (V1 scope)
 
 This is a portfolio project, not a startup MVP or a production system, so scope is deliberately narrow and deep rather than broad and shallow:
@@ -159,7 +163,7 @@ Built and verified incrementally, phase by phase — each phase has explicit acc
 - [ ] Phase 10 — Deterministic policy engine *(deepen: configurable thresholds)*
 - [ ] Phase 11 — Mock recovery/action tools *(deepen: cleaner provider-swap abstraction)*
 - [x] **Phase 12** — Outcome tracking + promise-to-pay: broken/fulfilled promise detection, forced escalation on a broken promise
-- [ ] Phase 13 — Kafka event integration
+- [x] **Phase 13** — Kafka event integration (7 domain events, log-fallback when unconfigured, standalone demo consumer)
 - [ ] Phase 14 — Redis / idempotency / state management
 - [ ] Phase 15 — Next.js dashboard
 - [ ] Phase 16 — Audit trail + observability

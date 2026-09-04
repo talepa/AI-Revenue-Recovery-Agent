@@ -26,6 +26,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.llm_client import diagnose, recommend
 from app.agents.state import RecoveryState
+from app.events import get_publisher
+from app.events import topics
 from app.ml.features import FEATURE_NAMES, RiskFeatures
 from app.ml.risk_model import score as score_risk
 from app.models import (
@@ -486,4 +488,39 @@ async def run_recovery_cycle(session: AsyncSession, case_id: UUID) -> RecoverySt
     graph = _build_graph(session)
     final_state: RecoveryState = await graph.ainvoke({"case_id": str(case_id)})
     await session.commit()
+
+    if not final_state.get("terminal") and "action_id" in final_state:
+        publisher = get_publisher()
+        await publisher.publish(
+            topics.RECOVERY_ACTION_COMPLETED,
+            str(case_id),
+            {
+                "case_id": str(case_id),
+                "action_id": final_state["action_id"],
+                "action_type": final_state.get("final_action"),
+                "outcome": final_state.get("outcome_summary"),
+            },
+        )
+        if final_state.get("final_action") == RecoveryActionType.TRACK_PROMISE_TO_PAY.value:
+            result = final_state.get("action_result") or {}
+            await publisher.publish(
+                topics.PROMISE_TO_PAY_CREATED,
+                str(case_id),
+                {
+                    "case_id": str(case_id),
+                    "promised_amount": result.get("promised_amount"),
+                    "promised_date": result.get("promised_date"),
+                },
+            )
+        if final_state.get("case_status") in ("CLOSED", "CLOSED_UNRECOVERED"):
+            await publisher.publish(
+                topics.RECOVERY_CASE_CLOSED,
+                str(case_id),
+                {
+                    "case_id": str(case_id),
+                    "status": final_state.get("case_status"),
+                    "outcome": final_state.get("outcome_summary"),
+                },
+            )
+
     return final_state

@@ -66,13 +66,16 @@ PostgreSQL. All monetary columns are `NUMERIC(14,2)` — never floating point.
 
 Indexes: `invoices(due_date, status)`, `invoices(company_id)`, `recovery_cases(status)`, `recovery_actions(recovery_case_id)`, `promise_to_pay(status, promised_date)`, `audit_logs(recovery_case_id, occurred_at)`.
 
-## 5. Event model
+## 5. Event model — implemented (Phase 13)
 
-Domain events (written to `payment_events` / published via an `EventPublisher` interface):
+`app/events/` defines `EventPublisher` (`app/events/publisher.py`) with two implementations, chosen automatically by whether `KAFKA_BOOTSTRAP_SERVERS` is configured — the same auto-fallback pattern as the LLM client (Phase 7):
 
-`invoice.created`, `invoice.overdue`, `payment.received`, `recovery.case_created`, `recovery.action_requested`, `recovery.action_completed`, `promise_to_pay.created`, `promise_to_pay.expired`, `recovery.case_closed`.
+- `LogEventPublisher` (default) — logs the event instead of publishing. No broker required to run the app.
+- `KafkaEventPublisher` — publishes to a real Kafka broker (`apache/kafka:3.9.0`, KRaft mode, single node, in `infra/docker-compose.yml`), with a bounded 5s timeout so an unreachable broker can never hang the request that triggered the publish. Failures are logged, never raised — Postgres is always the source of truth, Kafka is a best-effort broadcast on top of it, published only after the triggering DB commit succeeds.
 
-V1 uses an in-process `EventPublisher` implementation. Kafka is introduced in Phase 13 as a second implementation of the same interface — no business logic changes when it lands, because `payment_events` already serves as the transactional outbox.
+Topics actually published to (`app/events/topics.py`): `invoice.overdue`, `payment.received`, `recovery.case_created`, `recovery.action_completed`, `promise_to_pay.created`, `promise_to_pay.broken`, `recovery.case_closed`.
+
+`app/events/consumer.py` is a standalone demo consumer (`python -m app.events.consumer`) proving messages actually flow — it is not part of the FastAPI app's request path, since V1 has no long-running consumer (decision #2 above still holds: nothing in the app waits on a Kafka message).
 
 ## 6. LangGraph workflow state
 

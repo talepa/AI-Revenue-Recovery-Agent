@@ -15,5 +15,9 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     llm_model: str = "gpt-4o-mini"
 
+    # Event publishing: if unset, domain events are logged instead of
+    # published (see app/events/) — no Kafka required to run the app.
+    kafka_bootstrap_servers: str | None = None
+
 
 settings = Settings()
