@@ -134,8 +134,8 @@ Full local (non-Docker) setup and environment variables are documented in [backe
 Built and verified incrementally, phase by phase — each phase has explicit acceptance criteria before the next one starts.
 
 - [x] **Phase 1** — Project scaffold, Docker Compose, PostgreSQL, FastAPI health checks
-- [ ] Phase 2 — Database models + migrations
-- [ ] Phase 3 — Seed mock enterprise data (multiple risk scenarios)
+- [x] **Phase 2** — Database models (all 12 tables) + Alembic migrations
+- [x] **Phase 3** — Seed mock enterprise data (5 risk scenarios + 1 healthy account)
 - [ ] Phase 4 — FastAPI CRUD/read APIs
 - [ ] Phase 5 — Revenue-at-risk & recovery-case engine
 - [ ] Phase 6 — XGBoost recovery-risk model (synthetic training data)
