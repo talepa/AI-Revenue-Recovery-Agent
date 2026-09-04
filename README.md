@@ -97,6 +97,10 @@ A promise-to-pay that goes unfulfilled is treated as a hard fact, not left for t
 
 Every important fact the app produces — an invoice going overdue, a case opening, an action completing, a promise breaking, a case closing — is also broadcast as a domain event ([backend/app/events](backend/app/events)), Postgres-first: the DB write commits, *then* the event publishes, so a Kafka hiccup can never lose or block the underlying business fact. No `KAFKA_BOOTSTRAP_SERVERS` configured? Events are logged instead of published — same zero-setup fallback pattern as the LLM. `docker compose up` includes a real single-node Kafka broker (KRaft mode, no Zookeeper); `python -m app.events.consumer` is a standalone script that proves messages actually flow, since nothing in the app itself consumes them — this is a broadcast for future systems to plug into, not something the app depends on internally.
 
+## Idempotency (Redis)
+
+`POST /recovery-cases/{id}/run` and `POST /recovery-cases/detect-overdue` are locked ([backend/app/core/locks.py](backend/app/core/locks.py)) so two overlapping triggers of the same operation — a retried request, a double-click, an overlapping cron — can't race and double-execute actions. The second caller gets `409 Conflict`, not a silent duplicate. Verified with genuinely concurrent requests: firing two `POST .../run` calls at the same case in parallel produced exactly one new action, not two, with one request returning `200` and the other `409`. No `REDIS_URL` configured? Falls back to an in-process lock — same pattern as the LLM and Kafka — safe for a single instance, though (honestly) it can't coordinate across multiple app instances the way real Redis does.
+
 ## Why these boundaries (V1 scope)
 
 This is a portfolio project, not a startup MVP or a production system, so scope is deliberately narrow and deep rather than broad and shallow:
@@ -164,7 +168,7 @@ Built and verified incrementally, phase by phase — each phase has explicit acc
 - [ ] Phase 11 — Mock recovery/action tools *(deepen: cleaner provider-swap abstraction)*
 - [x] **Phase 12** — Outcome tracking + promise-to-pay: broken/fulfilled promise detection, forced escalation on a broken promise
 - [x] **Phase 13** — Kafka event integration (7 domain events, log-fallback when unconfigured, standalone demo consumer)
-- [ ] Phase 14 — Redis / idempotency / state management
+- [x] **Phase 14** — Redis idempotency locks on both engine-trigger endpoints (409 on contention, in-process fallback when unconfigured)
 - [ ] Phase 15 — Next.js dashboard
 - [ ] Phase 16 — Audit trail + observability
 - [ ] Phase 17 — Testing

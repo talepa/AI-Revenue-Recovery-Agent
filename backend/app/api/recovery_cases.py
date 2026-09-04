@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.agents.graph import run_recovery_cycle
 from app.core.db import get_db
+from app.core.locks import LockAcquisitionError, acquire_lock
 from app.models import AuditLog, Invoice, RecoveryAction, RecoveryCase
 from app.schemas.recovery import (
     AuditLogOut,
@@ -43,8 +44,13 @@ async def detect_overdue(db: AsyncSession = Depends(get_db)) -> DetectionSummary
     them, and resolve any promise-to-pay commitments whose date has passed.
 
     Manually/cron-triggered for V1 — no long-running consumer (see docs/architecture.md).
+    Returns 409 if a sweep is already in progress.
     """
-    result = await run_detection(db)
+    try:
+        async with acquire_lock("detect-overdue"):
+            result = await run_detection(db)
+    except LockAcquisitionError:
+        raise HTTPException(status_code=409, detail="A detection sweep is already in progress") from None
     return DetectionSummaryOut(
         invoices_marked_overdue=len(result.invoices_marked_overdue),
         cases_created=len(result.cases_created),
@@ -99,12 +105,19 @@ async def run_recovery_case(case_id: UUID, db: AsyncSession = Depends(get_db)) -
     """Advance this case by exactly one recovery cycle through the LangGraph workflow.
 
     A no-op (case unchanged) if the case is already in a terminal state.
+    Returns 409 if a cycle is already running for this case.
     """
     existing = await db.get(RecoveryCase, case_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="Recovery case not found")
 
-    await run_recovery_cycle(db, case_id)
+    try:
+        async with acquire_lock(f"recovery-case:{case_id}"):
+            await run_recovery_cycle(db, case_id)
+    except LockAcquisitionError:
+        raise HTTPException(
+            status_code=409, detail="A recovery cycle is already running for this case"
+        ) from None
 
     case = await _load_case_detail(db, case_id)
     return case

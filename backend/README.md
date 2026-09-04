@@ -126,3 +126,19 @@ Watch events actually flow with the standalone demo consumer (separate from the 
 ```bash
 python -m app.events.consumer
 ```
+
+## Idempotency locks (Redis)
+
+`app/core/locks.py` guards `POST /recovery-cases/{id}/run` (per-case) and `POST /recovery-cases/detect-overdue` (global) against concurrent triggers — the second overlapping call gets `409 Conflict` instead of racing with the first and double-executing actions. No `REDIS_URL` set? Falls back to an in-process `asyncio.Lock` — correct for a single process, but doesn't coordinate across multiple app instances.
+
+`docker compose up` includes Redis automatically (`REDIS_URL=redis://redis:6379/0`). For local (non-Docker) dev:
+
+```bash
+cd infra && docker compose up -d redis
+```
+
+then add to `backend/.env`:
+
+```
+REDIS_URL=redis://localhost:6380/0   # external listener, mapped off the default 6379
+```

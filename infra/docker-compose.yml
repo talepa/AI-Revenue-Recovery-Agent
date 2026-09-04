@@ -33,6 +33,18 @@ services:
       # Host access (e.g. running app/events/consumer.py locally, outside Docker).
       - "9094:9094"
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      # Host access; mapped off the default 6379 in case Redis is already
+      # running natively (same reasoning as Postgres's 5433 mapping).
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   api:
     build:
       context: ../backend
@@ -40,15 +52,18 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://recovery_user:recovery_pass@db:5432/recovery_db
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      REDIS_URL: redis://redis:6379/0
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
-      # Not service_healthy — Kafka is a best-effort side channel (see
-      # app/events/), the API must not fail to start just because it isn't
-      # ready yet.
+      # Neither Kafka nor Redis gate startup with service_healthy — both are
+      # best-effort side channels (see app/events/, app/core/locks.py); the
+      # API must not fail to start just because they aren't ready yet.
       kafka:
+        condition: service_started
+      redis:
         condition: service_started
 
 volumes:
