@@ -24,5 +24,13 @@ class Settings(BaseSettings):
     # fallback only guards against races within this one process.
     redis_url: str | None = None
 
+    # Observability: structured (JSON) logs are always on (see
+    # app/core/observability.py). LangSmith tracing of the LangGraph
+    # workflow is opt-in — off by default, no account required to run the app.
+    log_level: str = "INFO"
+    langchain_tracing_v2: bool = False
+    langchain_api_key: str | None = None
+    langchain_project: str = "ai-revenue-recovery-agent"
+
 
 settings = Settings()

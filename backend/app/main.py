@@ -2,13 +2,19 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api.companies import router as companies_router
-from app.api.dashboard import router as dashboard_router
-from app.api.health import router as health_router
-from app.api.invoices import router as invoices_router
-from app.api.recovery_cases import router as recovery_cases_router
-from app.core.config import settings
-from app.events import get_publisher
+from app.core.observability import configure_langsmith, configure_logging
+
+configure_logging()
+configure_langsmith()
+
+from app.api.companies import router as companies_router  # noqa: E402
+from app.api.dashboard import router as dashboard_router  # noqa: E402
+from app.api.health import router as health_router  # noqa: E402
+from app.api.invoices import router as invoices_router  # noqa: E402
+from app.api.recovery_cases import router as recovery_cases_router  # noqa: E402
+from app.core.config import settings  # noqa: E402
+from app.core.observability import RequestContextMiddleware  # noqa: E402
+from app.events import get_publisher  # noqa: E402
 
 
 @asynccontextmanager
@@ -18,6 +24,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
+app.add_middleware(RequestContextMiddleware)
 
 app.include_router(health_router)
 app.include_router(companies_router)

@@ -107,6 +107,10 @@ Next.js (App Router, TypeScript, Tailwind) — the visual layer over everything 
 
 Data fetching happens entirely server-side (Server Components) — the browser never calls the backend directly, so no CORS setup was needed. "Run recovery cycle," "Simulate payment," and "Run detection sweep" are Server Actions that call the same backend endpoints exercised throughout Phases 5-14, then revalidate the page.
 
+## Observability
+
+Every backend log line is one JSON object, and every HTTP request gets a request ID (generated, or reused from an incoming `X-Request-ID` header) that's bound to every log line emitted anywhere in that request's call stack — the risk engine, a LangGraph node, a Kafka publish failure — and echoed back in the response header, so one request's full story across every module is a single grep away. LangSmith tracing of the LangGraph workflow is a config-only opt-in (`LANGCHAIN_TRACING_V2=true` — LangChain already reports traces natively, no code change needed) — off by default, no account required to run the app. Deliberately **not** included: a full OpenTelemetry/collector setup — this is one service, not a distributed system needing cross-service trace correlation, and LangSmith already covers the observability that actually matters here.
+
 ## Why these boundaries (V1 scope)
 
 This is a portfolio project, not a startup MVP or a production system, so scope is deliberately narrow and deep rather than broad and shallow:
@@ -178,7 +182,7 @@ Built and verified incrementally, phase by phase — each phase has explicit acc
 - [x] **Phase 13** — Kafka event integration (7 domain events, log-fallback when unconfigured, standalone demo consumer)
 - [x] **Phase 14** — Redis idempotency locks on both engine-trigger endpoints (409 on contention, in-process fallback when unconfigured)
 - [x] **Phase 15** — Next.js dashboard (metrics, case table, full case detail, live actions)
-- [ ] Phase 16 — Audit trail + observability
+- [x] **Phase 16** — Structured (JSON) logging with request-ID correlation + opt-in LangSmith tracing
 - [ ] Phase 17 — Testing
 - [ ] Phase 18 — End-to-end demo
 
