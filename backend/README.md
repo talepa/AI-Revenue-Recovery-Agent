@@ -2,14 +2,20 @@
 
 FastAPI service for the AI Revenue Recovery Agent.
 
-## Run via Docker (recommended)
+## Quickest way to run it
+
+From the repo root: `./run.sh` — starts Postgres in Docker, sets up the venv, migrates, and launches the API with auto-reload. See the root [README](../README.md#getting-started).
+
+## Run via Docker only (no local Python, no auto-reload)
 
 ```bash
 cd ../infra
 docker compose up --build
 ```
 
-## Run locally
+## Run locally, manually
+
+Same as `run.sh` but step by step, if you want control over each part:
 
 ```bash
 cd backend

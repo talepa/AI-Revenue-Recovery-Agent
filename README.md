@@ -113,21 +113,23 @@ frontend/           # Next.js dashboard (added once the backend workflow is comp
 
 ## Getting started
 
-Requires Docker and Docker Compose.
+Requires Docker (for Postgres) and Python 3.12+.
 
 ```bash
-cd infra
-docker compose up --build
+./run.sh
 ```
 
-This starts PostgreSQL and the FastAPI backend. Once it's up:
+Starts Postgres in Docker, sets up the backend virtualenv, applies migrations, and runs the API with auto-reload at `http://localhost:8000` — edit any file under `backend/app/` and it restarts automatically. Ctrl+C stops the API; Postgres keeps running (`cd infra && docker compose down` to stop it too).
+
+Once it's up:
 
 ```bash
 curl http://localhost:8000/health
 curl http://localhost:8000/health/db
+python -m app.seed.run   # from backend/, with the venv active — loads demo data
 ```
 
-Full local (non-Docker) setup and environment variables are documented in [backend/README.md](backend/README.md).
+Prefer everything containerized instead (no local Python needed, no auto-reload)? `cd infra && docker compose up --build`. Full details for both paths are in [backend/README.md](backend/README.md).
 
 ## Build status
 
