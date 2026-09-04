@@ -2,14 +2,20 @@
 
 FastAPI service for the AI Revenue Recovery Agent.
 
-## Run via Docker (recommended)
+## Quickest way to run it
+
+From the repo root: `./run.sh` — starts Postgres in Docker, sets up the venv, migrates, and launches the API with auto-reload. See the root [README](../README.md#getting-started).
+
+## Run via Docker only (no local Python, no auto-reload)
 
 ```bash
 cd ../infra
 docker compose up --build
 ```
 
-## Run locally
+## Run locally, manually
+
+Same as `run.sh` but step by step, if you want control over each part:
 
 ```bash
 cd backend
@@ -62,3 +68,37 @@ Note: `tests/test_seed.py` is an integration test that runs the real seed script
 
 - `GET /health` — liveness, no dependencies
 - `GET /health/db` — verifies the database connection with `SELECT 1`
+- `GET /companies` / `GET /companies/{id}` — company list / detail with contacts
+- `GET /invoices` (filter by `status`, `company_id`; paginated) / `GET /invoices/overdue` / `GET /invoices/{id}`
+- `GET /recovery-cases` — dashboard-table shape: company, invoice, amount, days overdue, risk, status, current action, recovered amount
+- `GET /recovery-cases/{id}` — full case detail: invoice, actions (with the policy decision behind each), agent diagnoses/recommendations, promise-to-pay, communications, audit trail
+- `GET /recovery-cases/{id}/audit-trail` — just the ordered audit log for a case
+- `POST /recovery-cases/detect-overdue` — deterministic engine trigger: flips newly-overdue invoices to `OVERDUE` and opens a recovery case for each (idempotent, manually/cron-triggered — no long-running consumer in V1)
+- `POST /recovery-cases/{id}/run` — advances a case by one full LangGraph recovery cycle (diagnosis → recommendation → policy check → execute → outcome). No-op on an already-closed/escalated-terminal case.
+- `POST /invoices/{id}/simulate-payment` — mock payment simulation (stands in for a real payment webhook), so recovery can actually be demonstrated end-to-end
+- `GET /dashboard/metrics` — total revenue at risk, total recovered, recovery rate, active/escalated case counts, average days overdue, breakdown by risk level
+
+Interactive docs at `/docs` once the server is running.
+
+## ML risk model
+
+`app/ml/` holds the recovery-risk XGBoost model. It's trained on **synthetic data only** — see [synthetic_data.py](app/ml/synthetic_data.py) for the documented generative process. Not a production financial model.
+
+```bash
+python -m app.ml.train   # regenerates synthetic data, retrains, overwrites app/ml/artifacts/
+```
+
+The trained model (`app/ml/artifacts/recovery_risk_model.json`) and its metrics (`metrics.json`, currently AUC ~0.78) are committed to the repo, so the app runs out of the box without retraining. Real feature extraction (from actual payment history in Postgres — separate from the synthetic training generator) lives in `app/services/risk_context.py`; `POST /recovery-cases/detect-overdue` scores every case it creates automatically.
+
+## Recovery workflow (LangGraph) + LLM setup
+
+`app/agents/graph.py` builds the LangGraph state machine driving `POST /recovery-cases/{id}/run`; `app/services/policy_engine.py` is the deterministic gate that can override whatever the diagnosis/intervention agents recommend; `app/tools/mock_tools.py` executes whatever action the policy engine approves.
+
+By default (no config needed) diagnosis and intervention use a deterministic rule-based fallback — the whole workflow runs and is fully testable with zero external cost or setup. To use a real LLM instead, add to `backend/.env`:
+
+```
+OPENAI_API_KEY=sk-...
+LLM_MODEL=gpt-4o-mini   # optional, this is the default
+```
+
+No code change needed — `app/agents/llm_client.py` picks whichever path is configured automatically, and `agent_decisions.model_name` always records which one actually ran.
