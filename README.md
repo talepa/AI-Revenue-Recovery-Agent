@@ -167,6 +167,8 @@ open http://localhost:3000
 
 Prefer everything containerized instead (no local Python/Node needed, no hot reload)? `cd infra && docker compose up --build` — this now brings up Postgres, Kafka, Redis, the API, **and** the dashboard together. Full details for both paths are in [backend/README.md](backend/README.md) and [frontend/README.md](frontend/README.md).
 
+Want a guided tour instead of exploring cold? [docs/demo.md](docs/demo.md) walks through every item on the project brief's own "definition of done" checklist — overdue detection, risk scoring, AI diagnosis/recommendation, the policy engine overriding the agent, promise-to-pay, escalation, and the audit trail — with the exact commands to reproduce each step.
+
 ## Build status
 
 Built and verified incrementally, phase by phase — each phase has explicit acceptance criteria before the next one starts.
@@ -186,7 +188,7 @@ Built and verified incrementally, phase by phase — each phase has explicit acc
 - [x] **Phase 15** — Next.js dashboard (metrics, case table, full case detail, live actions)
 - [x] **Phase 16** — Structured (JSON) logging with request-ID correlation + opt-in LangSmith tracing
 - [x] **Phase 17** — Testing: 80 tests, ~94% coverage, GitHub Actions CI on every push
-- [ ] Phase 18 — End-to-end demo
+- [x] **Phase 18** — End-to-end demo: full checklist walked and verified against a fresh Docker stack ([docs/demo.md](docs/demo.md))
 
 ## Explicit non-goals for V1
 
