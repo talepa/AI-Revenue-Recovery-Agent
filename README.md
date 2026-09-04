@@ -138,7 +138,7 @@ Built and verified incrementally, phase by phase — each phase has explicit acc
 - [x] **Phase 1** — Project scaffold, Docker Compose, PostgreSQL, FastAPI health checks
 - [x] **Phase 2** — Database models (all 12 tables) + Alembic migrations
 - [x] **Phase 3** — Seed mock enterprise data (5 risk scenarios + 1 healthy account)
-- [ ] Phase 4 — FastAPI CRUD/read APIs
+- [x] **Phase 4** — FastAPI read APIs (companies, invoices, recovery cases + detail/audit trail)
 - [ ] Phase 5 — Revenue-at-risk & recovery-case engine
 - [ ] Phase 6 — XGBoost recovery-risk model (synthetic training data)
 - [ ] Phase 7 — LangGraph recovery workflow

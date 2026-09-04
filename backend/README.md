@@ -68,3 +68,10 @@ Note: `tests/test_seed.py` is an integration test that runs the real seed script
 
 - `GET /health` — liveness, no dependencies
 - `GET /health/db` — verifies the database connection with `SELECT 1`
+- `GET /companies` / `GET /companies/{id}` — company list / detail with contacts
+- `GET /invoices` (filter by `status`, `company_id`; paginated) / `GET /invoices/overdue` / `GET /invoices/{id}`
+- `GET /recovery-cases` — dashboard-table shape: company, invoice, amount, days overdue, risk, status, current action, recovered amount
+- `GET /recovery-cases/{id}` — full case detail: invoice, actions (with the policy decision behind each), agent diagnoses/recommendations, promise-to-pay, communications, audit trail
+- `GET /recovery-cases/{id}/audit-trail` — just the ordered audit log for a case
+
+Interactive docs at `/docs` once the server is running.
