@@ -10,5 +10,10 @@ class Settings(BaseSettings):
         "postgresql+asyncpg://recovery_user:recovery_pass@localhost:5432/recovery_db"
     )
 
+    # LLM provider: if unset, diagnosis/intervention fall back to a deterministic
+    # rule-based agent (see app/agents/llm_client.py) — no key required to run the app.
+    openai_api_key: str | None = None
+    llm_model: str = "gpt-4o-mini"
+
 
 settings = Settings()

@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.agents.graph import run_recovery_cycle
 from app.core.db import get_db
 from app.models import AuditLog, Invoice, RecoveryAction, RecoveryCase
 from app.schemas.recovery import (
@@ -17,6 +18,23 @@ from app.schemas.recovery import (
 from app.services.risk_engine import run_detection
 
 router = APIRouter(prefix="/recovery-cases", tags=["recovery-cases"])
+
+
+async def _load_case_detail(db: AsyncSession, case_id: UUID) -> RecoveryCase | None:
+    stmt = (
+        select(RecoveryCase)
+        .where(RecoveryCase.id == case_id)
+        .options(
+            selectinload(RecoveryCase.invoice).selectinload(Invoice.company),
+            selectinload(RecoveryCase.actions).selectinload(RecoveryAction.policy_decisions),
+            selectinload(RecoveryCase.agent_decisions),
+            selectinload(RecoveryCase.promises_to_pay),
+            selectinload(RecoveryCase.communication_logs),
+            selectinload(RecoveryCase.audit_logs),
+        )
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
 
 
 @router.post("/detect-overdue", response_model=DetectionSummaryOut)
@@ -67,22 +85,25 @@ async def list_recovery_cases(db: AsyncSession = Depends(get_db)) -> list[Recove
 
 @router.get("/{case_id}", response_model=RecoveryCaseDetailOut)
 async def get_recovery_case(case_id: UUID, db: AsyncSession = Depends(get_db)) -> RecoveryCase:
-    stmt = (
-        select(RecoveryCase)
-        .where(RecoveryCase.id == case_id)
-        .options(
-            selectinload(RecoveryCase.invoice).selectinload(Invoice.company),
-            selectinload(RecoveryCase.actions).selectinload(RecoveryAction.policy_decisions),
-            selectinload(RecoveryCase.agent_decisions),
-            selectinload(RecoveryCase.promises_to_pay),
-            selectinload(RecoveryCase.communication_logs),
-            selectinload(RecoveryCase.audit_logs),
-        )
-    )
-    result = await db.execute(stmt)
-    case = result.scalar_one_or_none()
+    case = await _load_case_detail(db, case_id)
     if case is None:
         raise HTTPException(status_code=404, detail="Recovery case not found")
+    return case
+
+
+@router.post("/{case_id}/run", response_model=RecoveryCaseDetailOut)
+async def run_recovery_case(case_id: UUID, db: AsyncSession = Depends(get_db)) -> RecoveryCase:
+    """Advance this case by exactly one recovery cycle through the LangGraph workflow.
+
+    A no-op (case unchanged) if the case is already in a terminal state.
+    """
+    existing = await db.get(RecoveryCase, case_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Recovery case not found")
+
+    await run_recovery_cycle(db, case_id)
+
+    case = await _load_case_detail(db, case_id)
     return case
 
 

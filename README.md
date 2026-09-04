@@ -83,6 +83,14 @@ Full architecture writeup: [docs/architecture.md](docs/architecture.md).
 
 `recovery_score` / `recovery_probability` come from an XGBoost classifier ([backend/app/ml](backend/app/ml)), **trained entirely on synthetic data** ([synthetic_data.py](backend/app/ml/synthetic_data.py) documents the generative process — a hand-specified, directionally-sensible logistic function with noise, not real outcomes). It scores AUC 0.78 on a held-out synthetic test split — real discriminative power, but only over a synthetic relationship it was itself trained to reproduce. **This is not a production financial risk model** and isn't presented as one; it demonstrates that the pipeline (feature extraction from real Postgres data → trained model → score persisted to the case → audited) actually works end-to-end. Every case the detection engine creates gets scored automatically; nothing here is hand-authored the way the Phase 3 demo scenarios are.
 
+## The recovery workflow — live, not just designed
+
+`POST /recovery-cases/{id}/run` ([backend/app/agents/graph.py](backend/app/agents/graph.py)) advances a case through one full cycle of the diagram above: load context → re-score risk → LLM diagnosis → LLM intervention recommendation → **deterministic policy check** → execute the policy-approved action → record the outcome. It's genuinely wired, not mocked out — the policy engine really does override the agent's recommendation when a rule fires (e.g. a reminder proposed inside the cooldown window gets rejected and replaced with `WAIT`, logged in `policy_decisions` either way).
+
+No `OPENAI_API_KEY`? Diagnosis/intervention fall back to a deterministic rule-based agent automatically ([app/agents/llm_client.py](backend/app/agents/llm_client.py)) — the graph, policy engine, and audit trail are fully exercised either way; add a key to `backend/.env` to switch to a real LLM, no code change needed. `agent_decisions.model_name` always records which path actually ran (`"rule-based-fallback"` or the real model name), so it's never ambiguous which one produced a given decision.
+
+`POST /invoices/{id}/simulate-payment` stands in for a real payment webhook, so "customer pays → case closes" is actually demonstrable end-to-end.
+
 ## Why these boundaries (V1 scope)
 
 This is a portfolio project, not a startup MVP or a production system, so scope is deliberately narrow and deep rather than broad and shallow:
@@ -145,12 +153,10 @@ Built and verified incrementally, phase by phase — each phase has explicit acc
 - [x] **Phase 4** — FastAPI read APIs (companies, invoices, recovery cases + detail/audit trail)
 - [x] **Phase 5** — Revenue-at-risk & recovery-case engine (deterministic overdue detection + case creation) + dashboard metrics
 - [x] **Phase 6** — XGBoost recovery-risk model (synthetic training data) wired into the detection engine
-- [ ] Phase 7 — LangGraph recovery workflow
-- [ ] Phase 8 — Diagnosis agent
-- [ ] Phase 9 — Intervention agent
-- [ ] Phase 10 — Deterministic policy engine
-- [ ] Phase 11 — Mock recovery/action tools
-- [ ] Phase 12 — Outcome tracking + promise-to-pay
+- [x] **Phase 7** — LangGraph recovery workflow, including the diagnosis agent, intervention agent, deterministic policy engine, and mock action tools (originally separate Phases 8-11 — built together since a graph with stub nodes isn't runnable; see [docs/architecture.md](docs/architecture.md))
+- [ ] Phase 10 — Deterministic policy engine *(deepen: configurable thresholds)*
+- [ ] Phase 11 — Mock recovery/action tools *(deepen: cleaner provider-swap abstraction)*
+- [ ] Phase 12 — Outcome tracking + promise-to-pay *(deepen: promise-expiry handling)*
 - [ ] Phase 13 — Kafka event integration
 - [ ] Phase 14 — Redis / idempotency / state management
 - [ ] Phase 15 — Next.js dashboard

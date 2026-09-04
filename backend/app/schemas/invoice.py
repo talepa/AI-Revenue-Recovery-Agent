@@ -22,3 +22,12 @@ class InvoiceOut(BaseModel):
     company: CompanyOut
     created_at: datetime
     updated_at: datetime
+
+
+class SimulatePaymentIn(BaseModel):
+    """Demo/mock payment simulation — not a real payment gateway webhook.
+
+    amount defaults to the full outstanding balance when omitted.
+    """
+
+    amount: Decimal | None = None
