@@ -61,7 +61,7 @@ curl -s http://localhost:8000/recovery-cases | python3 -c "import json,sys; prin
 ## 6-9. AI diagnosis, AI recommendation, policy validation, execute action
 
 On the dashboard, click into any non-closed case and click **"Run recovery cycle"**. You'll see:
-- A diagnosis (`Diagnosis` section) and a recommended action, each tagged with the model that produced it (`rule-based-fallback` unless `OPENAI_API_KEY` is configured).
+- A diagnosis (`Diagnosis` section) and a recommended action, each tagged with the model that produced it (`rule-based-fallback` unless `GOOGLE_API_KEY` or `OPENAI_API_KEY` is configured).
 - A new row in **Action History** showing the action, its status (`Executed`), and the **policy decision** that gated it.
 
 **The one that matters most** — click "Run recovery cycle" again immediately: the agent will recommend another reminder, and the policy engine will reject it (`MIN_TIME_BETWEEN_REMINDERS_DAYS not yet elapsed`), executing `WAIT` instead. That's the whole architectural thesis of this project, visible on screen.

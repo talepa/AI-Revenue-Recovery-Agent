@@ -53,6 +53,9 @@ services:
       DATABASE_URL: postgresql+asyncpg://recovery_user:recovery_pass@db:5432/recovery_db
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       REDIS_URL: redis://redis:6379/0
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
     ports:
       - "8000:8000"
     depends_on:

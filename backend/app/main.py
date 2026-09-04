@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -19,6 +20,15 @@ from app.events import get_publisher  # noqa: E402
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from app.agents.llm_client import configured_llm
+
+    provider, model = configured_llm()
+    logging.getLogger("app.llm").info(
+        "llm startup provider=%s model=%s",
+        provider,
+        model,
+        extra={"provider": provider, "model": model, "llm_called": provider != "fallback"},
+    )
     yield
     await get_publisher().close()
 

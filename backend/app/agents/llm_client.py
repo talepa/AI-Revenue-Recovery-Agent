@@ -1,11 +1,15 @@
 """LLM provider abstraction with a deterministic fallback.
 
-If OPENAI_API_KEY is configured (backend/.env), diagnosis/intervention use a
-real OpenAI-compatible chat model via LangChain's structured output. If not,
-a deterministic rule-based fallback produces plausible results so the whole
+If GOOGLE_API_KEY or OPENAI_API_KEY is configured (backend/.env), diagnosis
+and intervention use a real chat model via LangChain structured output.
+Gemini is preferred when both keys are set. If neither key is set, a
+deterministic rule-based fallback produces plausible results so the whole
 graph is fully runnable and testable with zero external dependencies or
-cost. Swapping providers is a config change, not a code change.
+cost. Presence of a key is the switch — no separate feature flag.
 """
+
+import logging
+from typing import Any
 
 from app.agents.prompts import (
     DIAGNOSIS_SYSTEM_PROMPT,
@@ -17,37 +21,87 @@ from app.agents.schemas import DiagnosisResult, InterventionRecommendation
 from app.core.config import settings
 
 FALLBACK_MODEL_NAME = "rule-based-fallback"
+GEMINI_DEFAULT_MODEL = "gemini-2.5-flash"
+OPENAI_DEFAULT_MODEL = "gpt-4o-mini"
+
+logger = logging.getLogger("app.llm")
 
 
-def _llm_configured() -> bool:
-    return bool(settings.openai_api_key)
+def configured_llm() -> tuple[str, str]:
+    """Return (provider, model_name) without constructing a client."""
+    if settings.google_api_key:
+        return "gemini", settings.llm_model or GEMINI_DEFAULT_MODEL
+    if settings.openai_api_key:
+        return "openai", settings.llm_model or OPENAI_DEFAULT_MODEL
+    return "fallback", FALLBACK_MODEL_NAME
+
+
+def _llm_chat() -> tuple[Any, str] | tuple[None, None]:
+    provider, model = configured_llm()
+    if provider == "gemini":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        return (
+            ChatGoogleGenerativeAI(
+                model=model,
+                api_key=settings.google_api_key,
+                temperature=0,
+            ),
+            model,
+        )
+    if provider == "openai":
+        from langchain_openai import ChatOpenAI
+
+        return (
+            ChatOpenAI(model=model, api_key=settings.openai_api_key, temperature=0),
+            model,
+        )
+    return None, None
+
+
+def _log_llm_call(stage: str, provider: str, model_name: str, *, llm_called: bool) -> None:
+    logger.info(
+        "llm %s provider=%s model=%s called=%s",
+        stage,
+        provider,
+        model_name,
+        llm_called,
+        extra={
+            "stage": stage,
+            "provider": provider,
+            "model": model_name,
+            "llm_called": llm_called,
+        },
+    )
 
 
 async def diagnose(invoice_context: dict, customer_context: dict) -> tuple[DiagnosisResult, str]:
-    if _llm_configured():
+    provider, _configured_model = configured_llm()
+    llm, model_name = _llm_chat()
+    if llm is not None:
         from langchain_core.messages import HumanMessage, SystemMessage
-        from langchain_openai import ChatOpenAI
 
-        llm = ChatOpenAI(model=settings.llm_model, api_key=settings.openai_api_key, temperature=0)
         structured_llm = llm.with_structured_output(DiagnosisResult)
         messages = [
             SystemMessage(content=DIAGNOSIS_SYSTEM_PROMPT),
             HumanMessage(content=build_diagnosis_prompt(invoice_context, customer_context)),
         ]
         result = await structured_llm.ainvoke(messages)
-        return result, settings.llm_model
+        _log_llm_call("diagnose", provider, model_name, llm_called=True)
+        return result, model_name
 
+    _log_llm_call("diagnose", provider, FALLBACK_MODEL_NAME, llm_called=False)
     return _rule_based_diagnosis(invoice_context, customer_context), FALLBACK_MODEL_NAME
 
 
 async def recommend(
     invoice_context: dict, customer_context: dict, diagnosis: dict, reminder_count: int
 ) -> tuple[InterventionRecommendation, str]:
-    if _llm_configured():
+    provider, _configured_model = configured_llm()
+    llm, model_name = _llm_chat()
+    if llm is not None:
         from langchain_core.messages import HumanMessage, SystemMessage
-        from langchain_openai import ChatOpenAI
 
-        llm = ChatOpenAI(model=settings.llm_model, api_key=settings.openai_api_key, temperature=0)
         structured_llm = llm.with_structured_output(InterventionRecommendation)
         messages = [
             SystemMessage(content=INTERVENTION_SYSTEM_PROMPT),
@@ -56,8 +110,10 @@ async def recommend(
             ),
         ]
         result = await structured_llm.ainvoke(messages)
-        return result, settings.llm_model
+        _log_llm_call("recommend", provider, model_name, llm_called=True)
+        return result, model_name
 
+    _log_llm_call("recommend", provider, FALLBACK_MODEL_NAME, llm_called=False)
     return _rule_based_intervention(invoice_context, reminder_count), FALLBACK_MODEL_NAME
 
 
