@@ -16,6 +16,7 @@ in execute_action.
 """
 
 import functools
+import logging
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import UUID
@@ -60,6 +61,8 @@ TERMINAL_STATUSES = {
     RecoveryCaseStatus.CLOSED_UNRECOVERED,
     RecoveryCaseStatus.RECOVERED,
 }
+
+logger = logging.getLogger("app.recovery_workflow")
 
 _ACTION_EVENT_TYPE = {
     RecoveryActionType.SEND_EMAIL: "EMAIL_SENT",
@@ -485,9 +488,20 @@ async def run_recovery_cycle(session: AsyncSession, case_id: UUID) -> RecoverySt
     if case is None:
         raise ValueError(f"RecoveryCase {case_id} not found")
 
+    logger.info("recovery cycle starting", extra={"case_id": str(case_id)})
     graph = _build_graph(session)
     final_state: RecoveryState = await graph.ainvoke({"case_id": str(case_id)})
     await session.commit()
+    logger.info(
+        "recovery cycle finished",
+        extra={
+            "case_id": str(case_id),
+            "final_action": final_state.get("final_action"),
+            "policy_decision": final_state.get("policy_decision"),
+            "case_status": final_state.get("case_status"),
+            "outcome": final_state.get("outcome_summary"),
+        },
+    )
 
     if not final_state.get("terminal") and "action_id" in final_state:
         publisher = get_publisher()

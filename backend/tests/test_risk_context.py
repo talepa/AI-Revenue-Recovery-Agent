@@ -1,10 +1,13 @@
 import asyncio
+from datetime import date, timedelta
+from decimal import Decimal
 
 import pytest
 from sqlalchemy import select
 
 from app.core.db import async_session_factory, engine
-from app.models import Invoice
+from app.models import Company, Invoice, RecoveryCase
+from app.models.enums import CompanySegment, InvoiceStatus, RecoveryCaseStatus
 from app.seed.run import seed
 from app.services.risk_context import build_risk_features
 
@@ -47,3 +50,59 @@ async def test_risk_features_use_neutral_prior_for_customer_with_no_case_history
     assert features.prior_recovery_success_rate == 0.5
     assert features.days_overdue == 60
     assert features.outstanding_balance == pytest.approx(1_800_000.0)
+
+
+async def test_risk_features_computes_real_prior_recovery_success_rate():
+    # A company with an actual track record (2 recovered, 1 not) should get
+    # a computed rate, not the 0.5 neutral default used for a clean slate.
+    async with async_session_factory() as session:
+        company = Company(name="Track Record Co", industry="Testing", segment=CompanySegment.MID_MARKET)
+        session.add(company)
+        await session.flush()
+
+        for i, (status, recovered) in enumerate(
+            [
+                (RecoveryCaseStatus.CLOSED, Decimal("50000.00")),
+                (RecoveryCaseStatus.CLOSED, Decimal("30000.00")),
+                (RecoveryCaseStatus.CLOSED_UNRECOVERED, Decimal("0.00")),
+            ]
+        ):
+            due = date.today() - timedelta(days=200 - i * 30)
+            past_invoice = Invoice(
+                company_id=company.id,
+                invoice_number=f"INV-TRACKREC-{i}",
+                amount_total=Decimal("50000.00"),
+                amount_paid=recovered,
+                issue_date=due - timedelta(days=30),
+                due_date=due,
+                status=InvoiceStatus.PAID if recovered > 0 else InvoiceStatus.WRITTEN_OFF,
+            )
+            session.add(past_invoice)
+            await session.flush()
+
+            session.add(
+                RecoveryCase(
+                    invoice_id=past_invoice.id,
+                    company_id=company.id,
+                    status=status,
+                    revenue_at_risk=Decimal("50000.00"),
+                    recovered_amount=recovered,
+                )
+            )
+
+        due = date.today() - timedelta(days=10)
+        current_invoice = Invoice(
+            company_id=company.id,
+            invoice_number="INV-TRACKREC-CURRENT",
+            amount_total=Decimal("40000.00"),
+            amount_paid=Decimal("0.00"),
+            issue_date=due - timedelta(days=30),
+            due_date=due,
+            status=InvoiceStatus.OVERDUE,
+        )
+        session.add(current_invoice)
+        await session.commit()
+
+        features = await build_risk_features(session, current_invoice)
+
+    assert features.prior_recovery_success_rate == pytest.approx(2 / 3)

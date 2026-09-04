@@ -9,6 +9,7 @@ from app.models import Company, Invoice, PromiseToPay, RecoveryCase
 from app.models.enums import CompanySegment, InvoiceStatus, PromiseToPayStatus, RecoveryCaseStatus
 from app.seed.run import seed
 from app.services.promise_tracking import check_promises_to_pay, has_unresolved_broken_promise
+from app.services.risk_engine import run_detection
 
 pytestmark = pytest.mark.asyncio(loop_scope="module")
 
@@ -98,6 +99,25 @@ async def test_promise_marked_broken_when_date_passes_unpaid():
         assert refreshed.status == PromiseToPayStatus.BROKEN
         has_broken = await has_unresolved_broken_promise(session, case.id)
         assert has_broken is True
+
+
+async def test_run_detection_resolves_broken_promises_and_publishes_event():
+    # Exercises the full orchestration path (run_detection), not just
+    # check_promises_to_pay directly — this is what POST
+    # /recovery-cases/detect-overdue actually calls, including the
+    # promise_to_pay.broken event publish.
+    case, promise = await _make_case_with_promise(
+        "Promise Test Co D", "INV-PROMTEST-D001", date.today() - timedelta(days=2), Decimal("0.00")
+    )
+
+    async with async_session_factory() as session:
+        result = await run_detection(session)
+
+    assert any(p.id == promise.id for p in result.promises_checked.broken)
+
+    async with async_session_factory() as session:
+        refreshed = await session.get(PromiseToPay, promise.id)
+        assert refreshed.status == PromiseToPayStatus.BROKEN
 
 
 async def test_promise_not_yet_due_stays_pending():

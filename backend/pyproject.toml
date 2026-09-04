@@ -1,0 +1,14 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["app"]
+omit = [
+    "app/seed/*",              # narrative data generation, not application logic
+    "app/ml/train.py",         # one-shot training script, exercised by running it, not asserted on
+    "app/ml/synthetic_data.py", # ditto — inputs to train.py, not application logic
+    "app/events/consumer.py",  # standalone demo script, not part of the app's request path
+]
+
+[tool.coverage.report]
+skip_empty = true

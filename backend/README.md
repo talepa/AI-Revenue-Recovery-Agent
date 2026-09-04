@@ -59,10 +59,13 @@ This is demo/dev data for the running app, not the (larger, purely synthetic) tr
 ## Test
 
 ```bash
-pytest
+pytest                                    # 80 tests
+pytest --cov --cov-report=term-missing    # with coverage (currently ~94%)
 ```
 
-Note: `tests/test_seed.py` is an integration test that runs the real seed script against the database — it needs `DATABASE_URL` pointing at a live Postgres (e.g. `docker compose up -d db`).
+Most tests need `DATABASE_URL` pointing at a live Postgres (`docker compose up -d db`) — they're integration tests against the real ORM/DB, not mocked. Runs automatically on every push via [GitHub Actions](../.github/workflows/ci.yml).
+
+The remaining ~6% of uncovered lines are the real-provider branches of the three auto-fallback integrations (a real OpenAI call in `app/agents/llm_client.py`, a real Redis lock in `app/core/locks.py`, a real Kafka publish in `app/events/kafka_publisher.py`) — each already verified manually against the real service (see the Phase 7/13/14 commit messages), not mocked out just to inflate a coverage number.
 
 ## Endpoints
 
@@ -142,3 +145,18 @@ then add to `backend/.env`:
 ```
 REDIS_URL=redis://localhost:6380/0   # external listener, mapped off the default 6379
 ```
+
+## Observability
+
+Every log line is one JSON object (`app/core/observability.py`) — `{"timestamp", "level", "logger", "message", ...}`, plus a `request_id` on any line logged during an HTTP request. `RequestContextMiddleware` generates that ID (or reuses an incoming `X-Request-ID` header), echoes it back in the response header, and binds it to a `contextvar` so every log line emitted anywhere in the call stack while handling that request — the risk engine, a LangGraph node, the Kafka publisher's failure path — carries the same ID, without threading it through every function signature. Grep any request's full story with `grep '"request_id": "<id>"'`.
+
+Uvicorn's own plain-text access log is disabled — the middleware's structured `"request completed"` line already covers it, in a format that's actually greppable.
+
+LangSmith tracing of the LangGraph workflow is opt-in and off by default — add to `backend/.env`:
+
+```
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_API_KEY=ls__...   # from smith.langchain.com
+```
+
+No code change needed — LangChain already reports traces natively once these are set; `app/core/observability.py` just bridges our `Settings` into `os.environ` at startup, since LangChain reads the OS environment directly, not our config object.

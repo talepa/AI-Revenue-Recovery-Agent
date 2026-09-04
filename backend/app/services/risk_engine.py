@@ -9,6 +9,7 @@ financial model" caveat) — that's the "Context Gathering -> Risk/Probability
 Model" stage. AI diagnosis/recommendation (Phase 8/9) still attach later.
 """
 
+import logging
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -27,6 +28,8 @@ from app.services.risk_context import build_risk_features
 # TODO(Phase 10): move into the formal deterministic policy engine config,
 # alongside MAX_EMAIL_REMINDERS, HIGH_VALUE_THRESHOLD, etc.
 MAX_RECOVERY_DAYS = 90
+
+logger = logging.getLogger("app.risk_engine")
 
 
 @dataclass
@@ -133,10 +136,20 @@ async def run_detection(session: AsyncSession, *, today: date | None = None) -> 
     """Run the full deterministic housekeeping pass: mark overdue invoices, open
     cases for them, and resolve any pending promise-to-pay commitments whose
     date has come and gone."""
+    logger.info("detection sweep starting")
     invoices_marked = await mark_overdue_invoices(session, today=today)
     cases_created = await create_recovery_cases_for_overdue_invoices(session)
     promises_checked = await check_promises_to_pay(session, today=today)
     await session.commit()
+    logger.info(
+        "detection sweep finished",
+        extra={
+            "invoices_marked_overdue": len(invoices_marked),
+            "cases_created": len(cases_created),
+            "promises_fulfilled": len(promises_checked.fulfilled),
+            "promises_broken": len(promises_checked.broken),
+        },
+    )
 
     # Publish only after the commit succeeds — the DB write is the source of
     # truth, Kafka is a best-effort broadcast on top of it.

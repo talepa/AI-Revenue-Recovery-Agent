@@ -1,5 +1,7 @@
 # AI Revenue Recovery Agent
 
+[![CI](https://github.com/talepa/AI-Revenue-Recovery-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/talepa/AI-Revenue-Recovery-Agent/actions/workflows/ci.yml)
+
 An AI-assisted system that detects at-risk B2B revenue (overdue invoices), decides how to recover it, and executes that decision inside deterministic financial guardrails — instead of relying on fixed retry rules or manual finance follow-ups.
 
 > **Status: under active development, built phase-by-phase.** This README tracks what's actually implemented (see [Build status](#build-status)), not the end-state vision. It is a **portfolio project on seeded, synthetic data** — no real payments, customers, or financial infrastructure are involved.
@@ -107,6 +109,10 @@ Next.js (App Router, TypeScript, Tailwind) — the visual layer over everything 
 
 Data fetching happens entirely server-side (Server Components) — the browser never calls the backend directly, so no CORS setup was needed. "Run recovery cycle," "Simulate payment," and "Run detection sweep" are Server Actions that call the same backend endpoints exercised throughout Phases 5-14, then revalidate the page.
 
+## Observability
+
+Every backend log line is one JSON object, and every HTTP request gets a request ID (generated, or reused from an incoming `X-Request-ID` header) that's bound to every log line emitted anywhere in that request's call stack — the risk engine, a LangGraph node, a Kafka publish failure — and echoed back in the response header, so one request's full story across every module is a single grep away. LangSmith tracing of the LangGraph workflow is a config-only opt-in (`LANGCHAIN_TRACING_V2=true` — LangChain already reports traces natively, no code change needed) — off by default, no account required to run the app. Deliberately **not** included: a full OpenTelemetry/collector setup — this is one service, not a distributed system needing cross-service trace correlation, and LangSmith already covers the observability that actually matters here.
+
 ## Why these boundaries (V1 scope)
 
 This is a portfolio project, not a startup MVP or a production system, so scope is deliberately narrow and deep rather than broad and shallow:
@@ -161,6 +167,8 @@ open http://localhost:3000
 
 Prefer everything containerized instead (no local Python/Node needed, no hot reload)? `cd infra && docker compose up --build` — this now brings up Postgres, Kafka, Redis, the API, **and** the dashboard together. Full details for both paths are in [backend/README.md](backend/README.md) and [frontend/README.md](frontend/README.md).
 
+Want a guided tour instead of exploring cold? [docs/demo.md](docs/demo.md) walks through every item on the project brief's own "definition of done" checklist — overdue detection, risk scoring, AI diagnosis/recommendation, the policy engine overriding the agent, promise-to-pay, escalation, and the audit trail — with the exact commands to reproduce each step.
+
 ## Build status
 
 Built and verified incrementally, phase by phase — each phase has explicit acceptance criteria before the next one starts.
@@ -178,9 +186,9 @@ Built and verified incrementally, phase by phase — each phase has explicit acc
 - [x] **Phase 13** — Kafka event integration (7 domain events, log-fallback when unconfigured, standalone demo consumer)
 - [x] **Phase 14** — Redis idempotency locks on both engine-trigger endpoints (409 on contention, in-process fallback when unconfigured)
 - [x] **Phase 15** — Next.js dashboard (metrics, case table, full case detail, live actions)
-- [ ] Phase 16 — Audit trail + observability
-- [ ] Phase 17 — Testing
-- [ ] Phase 18 — End-to-end demo
+- [x] **Phase 16** — Structured (JSON) logging with request-ID correlation + opt-in LangSmith tracing
+- [x] **Phase 17** — Testing: 80 tests, ~94% coverage, GitHub Actions CI on every push
+- [x] **Phase 18** — End-to-end demo: full checklist walked and verified against a fresh Docker stack ([docs/demo.md](docs/demo.md))
 
 ## Explicit non-goals for V1
 
