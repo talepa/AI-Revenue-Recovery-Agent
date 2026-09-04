@@ -1,4 +1,5 @@
 import asyncio
+from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
@@ -142,3 +143,24 @@ def test_recovery_case_404(client):
 
     resp = client.get(f"/recovery-cases/{NIL_UUID}/audit-trail")
     assert resp.status_code == 404
+
+
+def test_dashboard_metrics_endpoint(client):
+    resp = client.get("/dashboard/metrics")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert Decimal(data["total_revenue_at_risk"]) == Decimal("2780000.00")
+    assert Decimal(data["total_revenue_recovered"]) == Decimal("95000.00")
+    assert data["active_cases"] == 4
+    assert data["escalated_cases"] == 1
+
+
+def test_detect_overdue_endpoint_is_idempotent_against_seeded_data(client):
+    # The seeded scenarios are already fully created (Phase 3 hand-seeds
+    # cases directly), so the engine should find nothing new to do.
+    resp = client.post("/recovery-cases/detect-overdue")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["invoices_marked_overdue"] == 0
+    assert body["cases_created"] == 0
+    assert body["case_ids"] == []

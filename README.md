@@ -139,7 +139,7 @@ Built and verified incrementally, phase by phase — each phase has explicit acc
 - [x] **Phase 2** — Database models (all 12 tables) + Alembic migrations
 - [x] **Phase 3** — Seed mock enterprise data (5 risk scenarios + 1 healthy account)
 - [x] **Phase 4** — FastAPI read APIs (companies, invoices, recovery cases + detail/audit trail)
-- [ ] Phase 5 — Revenue-at-risk & recovery-case engine
+- [x] **Phase 5** — Revenue-at-risk & recovery-case engine (deterministic overdue detection + case creation) + dashboard metrics
 - [ ] Phase 6 — XGBoost recovery-risk model (synthetic training data)
 - [ ] Phase 7 — LangGraph recovery workflow
 - [ ] Phase 8 — Diagnosis agent

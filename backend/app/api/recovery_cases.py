@@ -8,9 +8,29 @@ from sqlalchemy.orm import selectinload
 
 from app.core.db import get_db
 from app.models import AuditLog, Invoice, RecoveryAction, RecoveryCase
-from app.schemas.recovery import AuditLogOut, RecoveryCaseDetailOut, RecoveryCaseListItemOut
+from app.schemas.recovery import (
+    AuditLogOut,
+    DetectionSummaryOut,
+    RecoveryCaseDetailOut,
+    RecoveryCaseListItemOut,
+)
+from app.services.risk_engine import run_detection
 
 router = APIRouter(prefix="/recovery-cases", tags=["recovery-cases"])
+
+
+@router.post("/detect-overdue", response_model=DetectionSummaryOut)
+async def detect_overdue(db: AsyncSession = Depends(get_db)) -> DetectionSummaryOut:
+    """Deterministic engine trigger: mark newly-overdue invoices and open cases for them.
+
+    Manually/cron-triggered for V1 — no long-running consumer (see docs/architecture.md).
+    """
+    result = await run_detection(db)
+    return DetectionSummaryOut(
+        invoices_marked_overdue=len(result.invoices_marked_overdue),
+        cases_created=len(result.cases_created),
+        case_ids=[c.id for c in result.cases_created],
+    )
 
 
 def _to_list_item(case: RecoveryCase) -> RecoveryCaseListItemOut:

@@ -73,5 +73,9 @@ Note: `tests/test_seed.py` is an integration test that runs the real seed script
 - `GET /recovery-cases` — dashboard-table shape: company, invoice, amount, days overdue, risk, status, current action, recovered amount
 - `GET /recovery-cases/{id}` — full case detail: invoice, actions (with the policy decision behind each), agent diagnoses/recommendations, promise-to-pay, communications, audit trail
 - `GET /recovery-cases/{id}/audit-trail` — just the ordered audit log for a case
+- `POST /recovery-cases/detect-overdue` — deterministic engine trigger: flips newly-overdue invoices to `OVERDUE` and opens a recovery case for each (idempotent, manually/cron-triggered — no long-running consumer in V1)
+- `GET /dashboard/metrics` — total revenue at risk, total recovered, recovery rate, active/escalated case counts, average days overdue, breakdown by risk level
 
 Interactive docs at `/docs` once the server is running.
+
+Note: cases created by `detect-overdue` have `risk_score`/`risk_level`/`recovery_probability` left `null` (shown as `"UNSCORED"` in the dashboard's risk breakdown) until Phase 6 wires in the ML scoring model — this is intentional, not a bug.

@@ -107,6 +107,12 @@ class RecoveryCaseListItemOut(BaseModel):
     recovered_amount: Decimal
 
 
+class DetectionSummaryOut(BaseModel):
+    invoices_marked_overdue: int
+    cases_created: int
+    case_ids: list[UUID]
+
+
 class RecoveryCaseDetailOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
