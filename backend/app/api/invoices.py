@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.db import get_db
+from app.events import get_publisher
+from app.events import topics
 from app.models import Invoice, Payment, PaymentEvent
 from app.models.enums import InvoiceStatus, PaymentEventType, PaymentMethod, PaymentStatus
 from app.schemas.invoice import InvoiceOut, SimulatePaymentIn
@@ -102,6 +104,12 @@ async def simulate_payment(
         )
     )
     await db.commit()
+
+    await get_publisher().publish(
+        topics.PAYMENT_RECEIVED,
+        str(invoice.id),
+        {"invoice_id": str(invoice.id), "amount": str(amount), "simulated": True},
+    )
 
     stmt = select(Invoice).options(selectinload(Invoice.company)).where(Invoice.id == invoice_id)
     result = await db.execute(stmt)

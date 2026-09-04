@@ -73,7 +73,7 @@ Note: `tests/test_seed.py` is an integration test that runs the real seed script
 - `GET /recovery-cases` — dashboard-table shape: company, invoice, amount, days overdue, risk, status, current action, recovered amount
 - `GET /recovery-cases/{id}` — full case detail: invoice, actions (with the policy decision behind each), agent diagnoses/recommendations, promise-to-pay, communications, audit trail
 - `GET /recovery-cases/{id}/audit-trail` — just the ordered audit log for a case
-- `POST /recovery-cases/detect-overdue` — deterministic engine trigger: flips newly-overdue invoices to `OVERDUE` and opens a recovery case for each (idempotent, manually/cron-triggered — no long-running consumer in V1)
+- `POST /recovery-cases/detect-overdue` — deterministic housekeeping trigger: flips newly-overdue invoices to `OVERDUE` and opens a recovery case for each, and resolves any pending promise-to-pay whose date has passed (`FULFILLED` if paid, `BROKEN` if not) — idempotent, manually/cron-triggered, no long-running consumer in V1
 - `POST /recovery-cases/{id}/run` — advances a case by one full LangGraph recovery cycle (diagnosis → recommendation → policy check → execute → outcome). No-op on an already-closed/escalated-terminal case.
 - `POST /invoices/{id}/simulate-payment` — mock payment simulation (stands in for a real payment webhook), so recovery can actually be demonstrated end-to-end
 - `GET /dashboard/metrics` — total revenue at risk, total recovered, recovery rate, active/escalated case counts, average days overdue, breakdown by risk level
@@ -102,3 +102,43 @@ LLM_MODEL=gpt-4o-mini   # optional, this is the default
 ```
 
 No code change needed — `app/agents/llm_client.py` picks whichever path is configured automatically, and `agent_decisions.model_name` always records which one actually ran.
+
+A broken promise-to-pay (see `app/services/promise_tracking.py`) forces escalation via `app/services/policy_engine.py`'s `has_broken_promise` check — same override pattern as the high-value/overdue rule, and it also feeds into the diagnosis context so the reasoning reflects it honestly.
+
+## Events (Kafka)
+
+`app/events/` publishes domain events after each successful DB commit — `invoice.overdue`, `payment.received`, `recovery.case_created`, `recovery.action_completed`, `promise_to_pay.created`, `promise_to_pay.broken`, `recovery.case_closed`. No `KAFKA_BOOTSTRAP_SERVERS` set? Events are logged instead (`app/events/log_publisher.py`) — no broker required to run the app.
+
+`docker compose up` includes Kafka (`apache/kafka:3.9.0`, KRaft mode) automatically, wired to the `api` service via `KAFKA_BOOTSTRAP_SERVERS=kafka:9092`. For local (non-Docker) dev:
+
+```bash
+cd infra && docker compose up -d kafka
+```
+
+then add to `backend/.env`:
+
+```
+KAFKA_BOOTSTRAP_SERVERS=localhost:9094   # external listener, mapped for host access
+```
+
+Watch events actually flow with the standalone demo consumer (separate from the API's request path — V1 has no long-running consumer):
+
+```bash
+python -m app.events.consumer
+```
+
+## Idempotency locks (Redis)
+
+`app/core/locks.py` guards `POST /recovery-cases/{id}/run` (per-case) and `POST /recovery-cases/detect-overdue` (global) against concurrent triggers — the second overlapping call gets `409 Conflict` instead of racing with the first and double-executing actions. No `REDIS_URL` set? Falls back to an in-process `asyncio.Lock` — correct for a single process, but doesn't coordinate across multiple app instances.
+
+`docker compose up` includes Redis automatically (`REDIS_URL=redis://redis:6379/0`). For local (non-Docker) dev:
+
+```bash
+cd infra && docker compose up -d redis
+```
+
+then add to `backend/.env`:
+
+```
+REDIS_URL=redis://localhost:6380/0   # external listener, mapped off the default 6379
+```

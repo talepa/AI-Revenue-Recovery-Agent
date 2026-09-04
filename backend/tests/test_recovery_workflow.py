@@ -7,9 +7,10 @@ from sqlalchemy import select
 
 from app.agents.graph import run_recovery_cycle
 from app.core.db import async_session_factory, engine
-from app.models import Company, Invoice, RecoveryAction, RecoveryCase
-from app.models.enums import CompanySegment, InvoiceStatus, RecoveryCaseStatus
+from app.models import Company, Invoice, PromiseToPay, RecoveryAction, RecoveryCase
+from app.models.enums import CompanySegment, InvoiceStatus, PromiseToPayStatus, RecoveryCaseStatus
 from app.seed.run import seed
+from app.services.promise_tracking import check_promises_to_pay
 from app.services.risk_engine import run_detection
 
 pytestmark = pytest.mark.asyncio(loop_scope="module")
@@ -119,6 +120,38 @@ async def test_payment_recovered_closes_the_case_on_next_cycle():
         assert refreshed.status == RecoveryCaseStatus.CLOSED
         assert refreshed.recovered_amount == Decimal("80000.00")
         assert refreshed.closed_at is not None
+
+
+async def test_broken_promise_forces_escalation_on_next_cycle():
+    case = await _create_overdue_case(
+        "Workflow Test Co D", "INV-WFTEST-D001", Decimal("90000.00"), days_overdue=12
+    )
+
+    # Simulate the customer having promised to pay, and that date passing unpaid —
+    # bypassing the graph entirely, the way a real broken promise would be found.
+    async with async_session_factory() as session:
+        invoice = await session.get(Invoice, case.invoice_id)
+        session.add(
+            PromiseToPay(
+                recovery_case_id=case.id,
+                invoice_id=invoice.id,
+                promised_amount=invoice.amount_total,
+                promised_date=date.today() - timedelta(days=1),
+                status=PromiseToPayStatus.PENDING,
+            )
+        )
+        await session.commit()
+
+    async with async_session_factory() as session:
+        await check_promises_to_pay(session)
+        await session.commit()
+
+    async with async_session_factory() as session:
+        final_state = await run_recovery_cycle(session, case.id)
+
+    assert final_state["final_action"] == "ESCALATE"
+    assert final_state["case_status"] == "ESCALATED"
+    assert "promise" in final_state["policy_reason"].lower()
 
 
 async def test_running_a_terminal_case_is_a_no_op():

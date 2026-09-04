@@ -15,5 +15,14 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     llm_model: str = "gpt-4o-mini"
 
+    # Event publishing: if unset, domain events are logged instead of
+    # published (see app/events/) — no Kafka required to run the app.
+    kafka_bootstrap_servers: str | None = None
+
+    # Locking/idempotency: if unset, falls back to an in-process lock
+    # (see app/core/locks.py) — no Redis required to run the app, but the
+    # fallback only guards against races within this one process.
+    redis_url: str | None = None
+
 
 settings = Settings()

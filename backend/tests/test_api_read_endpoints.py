@@ -164,3 +164,6 @@ def test_detect_overdue_endpoint_is_idempotent_against_seeded_data(client):
     assert body["invoices_marked_overdue"] == 0
     assert body["cases_created"] == 0
     assert body["case_ids"] == []
+    # Sundial's seeded promise isn't due yet, so nothing should resolve either.
+    assert body["promises_fulfilled"] == 0
+    assert body["promises_broken"] == 0

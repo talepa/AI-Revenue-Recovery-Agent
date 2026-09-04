@@ -26,6 +26,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.llm_client import diagnose, recommend
 from app.agents.state import RecoveryState
+from app.events import get_publisher
+from app.events import topics
 from app.ml.features import FEATURE_NAMES, RiskFeatures
 from app.ml.risk_model import score as score_risk
 from app.models import (
@@ -35,6 +37,7 @@ from app.models import (
     Contact,
     Invoice,
     PolicyDecision,
+    PromiseToPay,
     RecoveryAction,
     RecoveryCase,
 )
@@ -48,6 +51,7 @@ from app.models.enums import (
     RecoveryCaseStatus,
 )
 from app.services.policy_engine import evaluate_policy
+from app.services.promise_tracking import has_unresolved_broken_promise
 from app.services.risk_context import build_risk_features
 from app.tools.mock_tools import execute_mock_action
 
@@ -100,6 +104,23 @@ async def _last_action_at(session: AsyncSession, case_id: UUID) -> datetime | No
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
+async def _latest_promise_summary(session: AsyncSession, case_id: UUID) -> dict | None:
+    stmt = (
+        select(PromiseToPay)
+        .where(PromiseToPay.recovery_case_id == case_id)
+        .order_by(PromiseToPay.created_at.desc())
+        .limit(1)
+    )
+    promise = (await session.execute(stmt)).scalars().first()
+    if promise is None:
+        return None
+    return {
+        "status": promise.status.value,
+        "promised_amount": float(promise.promised_amount),
+        "promised_date": promise.promised_date.isoformat(),
+    }
+
+
 async def _next_sequence_number(session: AsyncSession, case_id: UUID) -> int:
     stmt = select(func.coalesce(func.max(RecoveryAction.sequence_number), 0)).where(
         RecoveryAction.recovery_case_id == case_id
@@ -136,12 +157,14 @@ async def check_terminal_node(state: RecoveryState, session: AsyncSession) -> di
 
 
 async def load_customer_context_node(state: RecoveryState, session: AsyncSession) -> dict:
-    case = await session.get(RecoveryCase, UUID(state["case_id"]))
+    case_id = UUID(state["case_id"])
+    case = await session.get(RecoveryCase, case_id)
     invoice = await session.get(Invoice, case.invoice_id)
     company = await session.get(Company, case.company_id)
 
     features = await build_risk_features(session, invoice)
     days_overdue = max((date.today() - invoice.due_date).days, 0)
+    promise = await _latest_promise_summary(session, case_id)
 
     return {
         "invoice_context": {
@@ -156,6 +179,7 @@ async def load_customer_context_node(state: RecoveryState, session: AsyncSession
             **features.to_row(),
             "company_name": company.name,
             "segment": company.segment.value,
+            "promise_to_pay": promise,
         },
     }
 
@@ -267,6 +291,7 @@ async def policy_check_node(state: RecoveryState, session: AsyncSession) -> dict
 
     last_action_at = await _last_action_at(session, case_id)
     days_since_last_action = (date.today() - last_action_at.date()).days if last_action_at else None
+    has_broken_promise = await has_unresolved_broken_promise(session, case_id)
 
     outcome = evaluate_policy(
         recommended_action=RecoveryActionType(state["recommended_action"]),
@@ -275,6 +300,7 @@ async def policy_check_node(state: RecoveryState, session: AsyncSession) -> dict
         revenue_at_risk=float(case.revenue_at_risk),
         case_status=case.status,
         days_since_last_action=days_since_last_action,
+        has_broken_promise=has_broken_promise,
     )
 
     seq = await _next_sequence_number(session, case_id)
@@ -462,4 +488,39 @@ async def run_recovery_cycle(session: AsyncSession, case_id: UUID) -> RecoverySt
     graph = _build_graph(session)
     final_state: RecoveryState = await graph.ainvoke({"case_id": str(case_id)})
     await session.commit()
+
+    if not final_state.get("terminal") and "action_id" in final_state:
+        publisher = get_publisher()
+        await publisher.publish(
+            topics.RECOVERY_ACTION_COMPLETED,
+            str(case_id),
+            {
+                "case_id": str(case_id),
+                "action_id": final_state["action_id"],
+                "action_type": final_state.get("final_action"),
+                "outcome": final_state.get("outcome_summary"),
+            },
+        )
+        if final_state.get("final_action") == RecoveryActionType.TRACK_PROMISE_TO_PAY.value:
+            result = final_state.get("action_result") or {}
+            await publisher.publish(
+                topics.PROMISE_TO_PAY_CREATED,
+                str(case_id),
+                {
+                    "case_id": str(case_id),
+                    "promised_amount": result.get("promised_amount"),
+                    "promised_date": result.get("promised_date"),
+                },
+            )
+        if final_state.get("case_status") in ("CLOSED", "CLOSED_UNRECOVERED"):
+            await publisher.publish(
+                topics.RECOVERY_CASE_CLOSED,
+                str(case_id),
+                {
+                    "case_id": str(case_id),
+                    "status": final_state.get("case_status"),
+                    "outcome": final_state.get("outcome_summary"),
+                },
+            )
+
     return final_state
