@@ -1,22 +1,25 @@
 """Deterministic revenue-at-risk detection and recovery-case creation.
 
-This is plain, auditable Python — no LLM, no ML. It is the "Event -> Revenue
-Risk Assessment -> Recovery Case" stage from the architecture: detecting
-overdue invoices and opening a case is a bookkeeping decision, not a
-judgment call, so it stays deterministic. Risk *scoring* (Phase 6, XGBoost)
-and AI diagnosis/recommendation (Phase 8/9) attach to a case only after it
-already exists here — a case with risk_score/risk_level still NULL simply
-hasn't been scored yet.
+Detecting overdue invoices and opening a case is a bookkeeping decision, not
+a judgment call, so it stays deterministic — this is the "Event -> Revenue
+Risk Assessment -> Recovery Case" stage from the architecture. Once a case
+exists, it's immediately scored by the XGBoost model (app/ml/risk_model.py,
+trained on synthetic data — see that module for the "not a production
+financial model" caveat) — that's the "Context Gathering -> Risk/Probability
+Model" stage. AI diagnosis/recommendation (Phase 8/9) still attach later.
 """
 
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ml.risk_model import score as score_risk
 from app.models import AuditLog, Invoice, PaymentEvent, RecoveryCase
 from app.models.enums import AuditActor, InvoiceStatus, PaymentEventType, RecoveryCaseStatus
+from app.services.risk_context import build_risk_features
 
 # TODO(Phase 10): move into the formal deterministic policy engine config,
 # alongside MAX_EMAIL_REMINDERS, HIGH_VALUE_THRESHOLD, etc.
@@ -93,6 +96,29 @@ async def create_recovery_cases_for_overdue_invoices(session: AsyncSession) -> l
                 occurred_at=now,
             )
         )
+
+        features = await build_risk_features(session, invoice)
+        risk_result = score_risk(features)
+        case.risk_score = Decimal(str(risk_result.risk_score))
+        case.risk_level = risk_result.risk_level
+        case.recovery_probability = Decimal(str(risk_result.recovery_probability))
+
+        session.add(
+            AuditLog(
+                recovery_case_id=case.id,
+                entity_type="recovery_case",
+                entity_id=case.id,
+                event_type="RISK_SCORED",
+                actor=AuditActor.SYSTEM,
+                description=(
+                    f"Risk scored via ML model (synthetic training data): "
+                    f"{risk_result.risk_level.value} ({risk_result.risk_score}), "
+                    f"recovery probability {risk_result.recovery_probability:.0%}."
+                ),
+                occurred_at=now,
+            )
+        )
+
         created.append(case)
 
     await session.flush()

@@ -70,8 +70,14 @@ async def test_detection_creates_case_for_newly_overdue_invoice():
     assert len(matching_cases) == 1
     case = matching_cases[0]
     assert case.revenue_at_risk == Decimal("50000.00")
-    assert case.risk_level is None  # not scored yet — that's Phase 6
     assert case.recovery_window_deadline == due + timedelta(days=90)
+
+    # Phase 6: the ML model scores every newly-created case immediately.
+    assert case.risk_level is not None
+    assert case.risk_score is not None
+    assert Decimal("0") <= case.risk_score <= Decimal("100")
+    assert case.recovery_probability is not None
+    assert Decimal("0") <= case.recovery_probability <= Decimal("1")
 
     async with async_session_factory() as session:
         result2 = await run_detection(session)

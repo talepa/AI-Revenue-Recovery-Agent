@@ -78,4 +78,12 @@ Note: `tests/test_seed.py` is an integration test that runs the real seed script
 
 Interactive docs at `/docs` once the server is running.
 
-Note: cases created by `detect-overdue` have `risk_score`/`risk_level`/`recovery_probability` left `null` (shown as `"UNSCORED"` in the dashboard's risk breakdown) until Phase 6 wires in the ML scoring model — this is intentional, not a bug.
+## ML risk model
+
+`app/ml/` holds the recovery-risk XGBoost model. It's trained on **synthetic data only** — see [synthetic_data.py](app/ml/synthetic_data.py) for the documented generative process. Not a production financial model.
+
+```bash
+python -m app.ml.train   # regenerates synthetic data, retrains, overwrites app/ml/artifacts/
+```
+
+The trained model (`app/ml/artifacts/recovery_risk_model.json`) and its metrics (`metrics.json`, currently AUC ~0.78) are committed to the repo, so the app runs out of the box without retraining. Real feature extraction (from actual payment history in Postgres — separate from the synthetic training generator) lives in `app/services/risk_context.py`; `POST /recovery-cases/detect-overdue` scores every case it creates automatically.

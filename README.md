@@ -79,6 +79,10 @@ Audit Trail + Dashboard Metrics  (every step above is logged here)
 
 Full architecture writeup: [docs/architecture.md](docs/architecture.md).
 
+## The ML model — and its honesty boundary
+
+`recovery_score` / `recovery_probability` come from an XGBoost classifier ([backend/app/ml](backend/app/ml)), **trained entirely on synthetic data** ([synthetic_data.py](backend/app/ml/synthetic_data.py) documents the generative process — a hand-specified, directionally-sensible logistic function with noise, not real outcomes). It scores AUC 0.78 on a held-out synthetic test split — real discriminative power, but only over a synthetic relationship it was itself trained to reproduce. **This is not a production financial risk model** and isn't presented as one; it demonstrates that the pipeline (feature extraction from real Postgres data → trained model → score persisted to the case → audited) actually works end-to-end. Every case the detection engine creates gets scored automatically; nothing here is hand-authored the way the Phase 3 demo scenarios are.
+
 ## Why these boundaries (V1 scope)
 
 This is a portfolio project, not a startup MVP or a production system, so scope is deliberately narrow and deep rather than broad and shallow:
@@ -140,7 +144,7 @@ Built and verified incrementally, phase by phase — each phase has explicit acc
 - [x] **Phase 3** — Seed mock enterprise data (5 risk scenarios + 1 healthy account)
 - [x] **Phase 4** — FastAPI read APIs (companies, invoices, recovery cases + detail/audit trail)
 - [x] **Phase 5** — Revenue-at-risk & recovery-case engine (deterministic overdue detection + case creation) + dashboard metrics
-- [ ] Phase 6 — XGBoost recovery-risk model (synthetic training data)
+- [x] **Phase 6** — XGBoost recovery-risk model (synthetic training data) wired into the detection engine
 - [ ] Phase 7 — LangGraph recovery workflow
 - [ ] Phase 8 — Diagnosis agent
 - [ ] Phase 9 — Intervention agent
