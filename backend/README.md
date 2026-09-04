@@ -38,11 +38,25 @@ alembic downgrade -1                                         # roll back one mig
 
 When running via Docker, migrations are applied automatically on container start (see `entrypoint.sh`) — no manual step needed.
 
+## Seed demo data
+
+Populates a realistic dataset covering all five recovery scenarios from the project brief (low-risk, repeat-late-payer medium-risk, high-risk escalated, promise-to-pay, and recovered-after-reminder) plus one fully healthy account. Safe to re-run — it clears prior seed data first, and all dates are relative to "today" so the scenarios (e.g. "5 days overdue") stay accurate no matter when you run it.
+
+```bash
+python -m app.seed.run
+```
+
+Via Docker: `docker compose exec api python -m app.seed.run`.
+
+This is demo/dev data for the running app, not the (larger, purely synthetic) training set the Phase 6 ML model will use.
+
 ## Test
 
 ```bash
 pytest
 ```
+
+Note: `tests/test_seed.py` is an integration test that runs the real seed script against the database — it needs `DATABASE_URL` pointing at a live Postgres (e.g. `docker compose up -d db`).
 
 ## Endpoints
 
