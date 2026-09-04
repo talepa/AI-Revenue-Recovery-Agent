@@ -6,6 +6,7 @@ mixing this module's event loop with TestClient's separate portal loop
 """
 
 import asyncio
+import uuid
 
 import pytest
 from fastapi import HTTPException
@@ -60,3 +61,10 @@ async def test_run_recovery_case_succeeds_once_lock_is_free():
 
     assert result is not None
     assert result.id == case_id
+
+
+async def test_run_recovery_case_404_for_missing_case():
+    async with async_session_factory() as session:
+        with pytest.raises(HTTPException) as exc_info:
+            await run_recovery_case(uuid.uuid4(), db=session)
+    assert exc_info.value.status_code == 404

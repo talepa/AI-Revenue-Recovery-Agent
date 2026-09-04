@@ -80,6 +80,49 @@ def test_get_invoice_404(client):
     assert resp.status_code == 404
 
 
+def test_get_invoice_by_id_matches_list_entry(client):
+    overdue = client.get("/invoices/overdue").json()
+    target = overdue[0]
+
+    resp = client.get(f"/invoices/{target['id']}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["invoice_number"] == target["invoice_number"]
+    assert body["company"]["name"] == target["company"]["name"]
+
+
+def test_list_invoices_filters_by_status(client):
+    resp = client.get("/invoices", params={"status": "PAID"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) >= 1
+    assert all(inv["status"] == "PAID" for inv in data)
+
+
+def test_list_invoices_filters_by_company_id(client):
+    overdue = client.get("/invoices/overdue").json()
+    company_id = overdue[0]["company"]["id"]
+
+    resp = client.get("/invoices", params={"company_id": company_id})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) >= 1
+    assert all(inv["company"]["id"] == company_id for inv in data)
+
+
+def test_list_invoices_pagination(client):
+    page1 = client.get("/invoices", params={"limit": 2, "offset": 0}).json()
+    page2 = client.get("/invoices", params={"limit": 2, "offset": 2}).json()
+    assert len(page1) == 2
+    assert {inv["id"] for inv in page1}.isdisjoint({inv["id"] for inv in page2})
+
+
+def test_health_db_endpoint(client):
+    resp = client.get("/health/db")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "ok"}
+
+
 def test_list_recovery_cases_matches_dashboard_shape(client):
     resp = client.get("/recovery-cases")
     assert resp.status_code == 200

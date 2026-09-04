@@ -59,10 +59,13 @@ This is demo/dev data for the running app, not the (larger, purely synthetic) tr
 ## Test
 
 ```bash
-pytest
+pytest                                    # 80 tests
+pytest --cov --cov-report=term-missing    # with coverage (currently ~94%)
 ```
 
-Note: `tests/test_seed.py` is an integration test that runs the real seed script against the database — it needs `DATABASE_URL` pointing at a live Postgres (e.g. `docker compose up -d db`).
+Most tests need `DATABASE_URL` pointing at a live Postgres (`docker compose up -d db`) — they're integration tests against the real ORM/DB, not mocked. Runs automatically on every push via [GitHub Actions](../.github/workflows/ci.yml).
+
+The remaining ~6% of uncovered lines are the real-provider branches of the three auto-fallback integrations (a real OpenAI call in `app/agents/llm_client.py`, a real Redis lock in `app/core/locks.py`, a real Kafka publish in `app/events/kafka_publisher.py`) — each already verified manually against the real service (see the Phase 7/13/14 commit messages), not mocked out just to inflate a coverage number.
 
 ## Endpoints
 

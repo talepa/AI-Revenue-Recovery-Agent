@@ -1,5 +1,7 @@
 # AI Revenue Recovery Agent
 
+[![CI](https://github.com/talepa/AI-Revenue-Recovery-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/talepa/AI-Revenue-Recovery-Agent/actions/workflows/ci.yml)
+
 An AI-assisted system that detects at-risk B2B revenue (overdue invoices), decides how to recover it, and executes that decision inside deterministic financial guardrails — instead of relying on fixed retry rules or manual finance follow-ups.
 
 > **Status: under active development, built phase-by-phase.** This README tracks what's actually implemented (see [Build status](#build-status)), not the end-state vision. It is a **portfolio project on seeded, synthetic data** — no real payments, customers, or financial infrastructure are involved.
@@ -183,7 +185,7 @@ Built and verified incrementally, phase by phase — each phase has explicit acc
 - [x] **Phase 14** — Redis idempotency locks on both engine-trigger endpoints (409 on contention, in-process fallback when unconfigured)
 - [x] **Phase 15** — Next.js dashboard (metrics, case table, full case detail, live actions)
 - [x] **Phase 16** — Structured (JSON) logging with request-ID correlation + opt-in LangSmith tracing
-- [ ] Phase 17 — Testing
+- [x] **Phase 17** — Testing: 80 tests, ~94% coverage, GitHub Actions CI on every push
 - [ ] Phase 18 — End-to-end demo
 
 ## Explicit non-goals for V1
