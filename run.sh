@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # One-command local dev runner: starts Postgres (Docker), sets up the
-# backend venv, applies migrations, and launches the API with auto-reload.
+# backend venv, applies migrations, launches the API with auto-reload,
+# and launches the Next.js dashboard with hot reload.
 #
 # Usage: ./run.sh
 
@@ -41,7 +42,7 @@ fi
 # shellcheck disable=SC1091
 source .venv/bin/activate
 
-echo "==> Installing dependencies..."
+echo "==> Installing backend dependencies..."
 pip install -q -r requirements-dev.txt
 
 if [ ! -f .env ]; then
@@ -52,6 +53,46 @@ fi
 echo "==> Applying database migrations..."
 alembic upgrade head
 
-echo "==> Starting API with auto-reload at http://localhost:8000 (Ctrl+C to stop)"
+# npm/Next.js (Turbopack) spawn subprocesses that don't always die with
+# their parent, so on exit we also free the ports directly rather than
+# relying solely on PID-based kills.
+kill_port() {
+    local pids
+    pids=$(lsof -ti "tcp:$1" -sTCP:LISTEN 2>/dev/null || true)
+    if [ -n "$pids" ]; then
+        kill $pids 2>/dev/null || true
+    fi
+}
+
+cleanup() {
+    echo
+    echo "==> Stopping API and dashboard..."
+    kill "$API_PID" "$WEB_PID" 2>/dev/null || true
+    sleep 1
+    kill_port 8000
+    kill_port 3000
+}
+trap cleanup EXIT INT TERM
+
+echo "==> Starting API with auto-reload at http://localhost:8000"
+uvicorn app.main:app --reload --port 8000 &
+API_PID=$!
+
+cd "$REPO_ROOT/frontend"
+
+if [ ! -d node_modules ]; then
+    echo "==> Installing frontend dependencies (first run only, ~30s)..."
+    npm install
+fi
+
+if [ ! -f .env.local ]; then
+    echo "==> Creating frontend/.env.local from .env.local.example..."
+    cp .env.local.example .env.local
+fi
+
+echo "==> Starting dashboard at http://localhost:3000 (Ctrl+C to stop everything)"
 echo "    Postgres stays running in Docker — 'cd infra && docker compose down' to stop it."
-exec uvicorn app.main:app --reload --port 8000
+npm run dev &
+WEB_PID=$!
+
+wait

@@ -101,6 +101,12 @@ Every important fact the app produces — an invoice going overdue, a case openi
 
 `POST /recovery-cases/{id}/run` and `POST /recovery-cases/detect-overdue` are locked ([backend/app/core/locks.py](backend/app/core/locks.py)) so two overlapping triggers of the same operation — a retried request, a double-click, an overlapping cron — can't race and double-execute actions. The second caller gets `409 Conflict`, not a silent duplicate. Verified with genuinely concurrent requests: firing two `POST .../run` calls at the same case in parallel produced exactly one new action, not two, with one request returning `200` and the other `409`. No `REDIS_URL` configured? Falls back to an in-process lock — same pattern as the LLM and Kafka — safe for a single instance, though (honestly) it can't coordinate across multiple app instances the way real Redis does.
 
+## The dashboard
+
+Next.js (App Router, TypeScript, Tailwind) — the visual layer over everything above, at `http://localhost:3000`. The main view shows the KPIs from the brief (revenue at risk, recovered, recovery rate, active/escalated cases, average days overdue) plus a risk-level and current-action breakdown, and the full recovery-case table. Clicking a case opens its complete story: invoice and company detail, risk score, the AI's actual diagnosis and recommendation (with the model that produced it), the full action history with the policy decision behind each one, promise-to-pay status, communications, and the audit timeline — everything the brief's case-detail spec asked for, reading real data, not mocked screens.
+
+Data fetching happens entirely server-side (Server Components) — the browser never calls the backend directly, so no CORS setup was needed. "Run recovery cycle," "Simulate payment," and "Run detection sweep" are Server Actions that call the same backend endpoints exercised throughout Phases 5-14, then revalidate the page.
+
 ## Why these boundaries (V1 scope)
 
 This is a portfolio project, not a startup MVP or a production system, so scope is deliberately narrow and deep rather than broad and shallow:
@@ -130,28 +136,30 @@ infra/
   docker-compose.yml
 docs/
   architecture.md   # full design: schema, event model, LangGraph state, API surface
-frontend/           # Next.js dashboard (added once the backend workflow is complete)
+frontend/
+  app/              # Next.js App Router — dashboard + case detail pages, Server Actions
+  components/       # Badge, MetricCard, CasesTable, AuditTimeline, ActionButton, ...
+  lib/              # typed API client, formatting, badge-color mapping
 ```
 
 ## Getting started
 
-Requires Docker (for Postgres) and Python 3.12+.
+Requires Docker (for Postgres) and Python 3.12+ and Node 20+ (for the dashboard).
 
 ```bash
 ./run.sh
 ```
 
-Starts Postgres in Docker, sets up the backend virtualenv, applies migrations, and runs the API with auto-reload at `http://localhost:8000` — edit any file under `backend/app/` and it restarts automatically. Ctrl+C stops the API; Postgres keeps running (`cd infra && docker compose down` to stop it too).
+Starts Postgres in Docker, sets up the backend virtualenv, applies migrations, and runs the API with auto-reload at `http://localhost:8000` **and** the dashboard with hot reload at `http://localhost:3000` — edit anything under `backend/app/` or `frontend/` and it updates live. Ctrl+C stops both; Postgres keeps running (`cd infra && docker compose down` to stop it too).
 
-Once it's up:
+Once it's up, load some demo data and open the dashboard:
 
 ```bash
-curl http://localhost:8000/health
-curl http://localhost:8000/health/db
 python -m app.seed.run   # from backend/, with the venv active — loads demo data
+open http://localhost:3000
 ```
 
-Prefer everything containerized instead (no local Python needed, no auto-reload)? `cd infra && docker compose up --build`. Full details for both paths are in [backend/README.md](backend/README.md).
+Prefer everything containerized instead (no local Python/Node needed, no hot reload)? `cd infra && docker compose up --build` — this now brings up Postgres, Kafka, Redis, the API, **and** the dashboard together. Full details for both paths are in [backend/README.md](backend/README.md) and [frontend/README.md](frontend/README.md).
 
 ## Build status
 
@@ -169,7 +177,7 @@ Built and verified incrementally, phase by phase — each phase has explicit acc
 - [x] **Phase 12** — Outcome tracking + promise-to-pay: broken/fulfilled promise detection, forced escalation on a broken promise
 - [x] **Phase 13** — Kafka event integration (7 domain events, log-fallback when unconfigured, standalone demo consumer)
 - [x] **Phase 14** — Redis idempotency locks on both engine-trigger endpoints (409 on contention, in-process fallback when unconfigured)
-- [ ] Phase 15 — Next.js dashboard
+- [x] **Phase 15** — Next.js dashboard (metrics, case table, full case detail, live actions)
 - [ ] Phase 16 — Audit trail + observability
 - [ ] Phase 17 — Testing
 - [ ] Phase 18 — End-to-end demo

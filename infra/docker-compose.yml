@@ -66,5 +66,18 @@ services:
       redis:
         condition: service_started
 
+  web:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    environment:
+      # Server-only — resolved inside the `web` container, never sent to
+      # the browser, so it talks to `api` over the compose network.
+      API_BASE_URL: http://api:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
 volumes:
   db_data:
