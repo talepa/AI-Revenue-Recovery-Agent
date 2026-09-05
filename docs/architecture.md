@@ -102,7 +102,7 @@ class RecoveryState(TypedDict):
 
 Nodes: `initialize_recovery_case → load_customer_context → calculate_recovery_risk → diagnose_case → recommend_intervention → policy_check → execute_action → record_outcome → (payment_recovered? / recovery_window_valid?) → next_allowed_action` (loops back to `policy_check`).
 
-One graph invocation advances a case by exactly one recovery cycle. Cycles are triggered manually or by a scheduler (`POST /recovery-cases/{id}/run`) — there is no long-running consumer in V1.
+One graph invocation advances a case by exactly one recovery cycle. Cycles are triggered by the in-process scheduler (`SCHEDULER_ENABLED`, `app/services/scheduler.py`) or still by `POST /recovery-cases/{id}/run`. There is no long-running Kafka consumer.
 
 ## 7. API surface
 
@@ -119,7 +119,7 @@ Seeding is a CLI script (`backend/app/seed`), not an API endpoint.
 ## 8. Key implementation decisions
 
 1. **One recovery case per invoice, no reopening in V1.** Simplifies the state machine; reopening is a natural V2 extension.
-2. **Manual/cron-triggered workflow cycles**, not a long-running Kafka consumer, for deterministic demoing.
+2. **In-process scheduler for workflow cycles**, not a long-running Kafka consumer. Detection and `/run` stay lock-guarded HTTP entry points; the scheduler calls the same services. Off by default in CI.
 3. **Structured LLM output via LangChain's `with_structured_output` + Pydantic** — no extra structured-output library.
 4. **`payment_events` is the outbox table** for the eventual Kafka producer, avoiding a schema change in Phase 13.
 5. **Default currency INR**, stored per invoice/transaction, no FX conversion logic in V1.

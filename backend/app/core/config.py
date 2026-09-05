@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     langchain_api_key: str | None = None
     langchain_project: str = "ai-revenue-recovery-agent"
 
+    # In-process recovery loop (detect overdue + one cycle per active case).
+    # Off by default so CI/tests stay deterministic; enable in backend/.env.
+    scheduler_enabled: bool = False
+    scheduler_interval_seconds: int = 60
+    scheduler_initial_delay_seconds: int = 5
+
     @field_validator("google_api_key", "openai_api_key", "llm_model", mode="before")
     @classmethod
     def _blank_to_none(cls, value: object) -> object:

@@ -21,6 +21,7 @@ from app.events import get_publisher  # noqa: E402
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from app.agents.llm_client import configured_llm
+    from app.services.scheduler import start_scheduler, stop_scheduler
 
     provider, model = configured_llm()
     logging.getLogger("app.llm").info(
@@ -29,7 +30,9 @@ async def lifespan(app: FastAPI):
         model,
         extra={"provider": provider, "model": model, "llm_called": provider != "fallback"},
     )
+    start_scheduler()
     yield
+    await stop_scheduler()
     await get_publisher().close()
 
 

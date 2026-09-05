@@ -58,7 +58,8 @@ export default async function DashboardPage() {
             Revenue Recovery Dashboard
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Live from the recovery engine — every number below reflects real database state.
+            Engine loop detects overdue invoices and runs recovery cycles on a timer.
+            Buttons below are optional overrides. Numbers are live from Postgres.
           </p>
         </div>
         <ActionButton

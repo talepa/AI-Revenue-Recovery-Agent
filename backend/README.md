@@ -106,6 +106,8 @@ LLM_MODEL=gemini-2.5-flash         # optional; this is the Gemini default
 
 OpenAI still works as an alternate (`OPENAI_API_KEY`, default model `gpt-4o-mini`). If both keys are set, Gemini is used. `app/agents/llm_client.py` picks the path from config automatically, and `agent_decisions.model_name` always records which model actually ran.
 
+Set `SCHEDULER_ENABLED=true` in `backend/.env` to run detection + one recovery cycle per active (`OPEN`/`MONITORING`) case on a timer. The HTTP endpoints remain; the scheduler calls the same services and locks. CI leaves this off.
+
 A broken promise-to-pay (see `app/services/promise_tracking.py`) forces escalation via `app/services/policy_engine.py`'s `has_broken_promise` check — same override pattern as the high-value/overdue rule, and it also feeds into the diagnosis context so the reasoning reflects it honestly.
 
 ## Events (Kafka)

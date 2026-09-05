@@ -10,7 +10,9 @@ import type {
 // data fetching and mutations happen in Server Components / Server Actions,
 // so the browser never talks to the backend directly and no CORS setup is
 // needed on the API.
-const API_BASE_URL = process.env.API_BASE_URL ?? "http://localhost:8000";
+// 127.0.0.1 (IPv4) — `localhost` can resolve to ::1 and hit a Docker listener
+// on :8000 instead of the local uvicorn process.
+const API_BASE_URL = process.env.API_BASE_URL ?? "http://127.0.0.1:8000";
 
 export class ApiError extends Error {
   constructor(

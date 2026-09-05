@@ -43,8 +43,8 @@ async def detect_overdue(db: AsyncSession = Depends(get_db)) -> DetectionSummary
     """Deterministic engine trigger: mark newly-overdue invoices, open cases for
     them, and resolve any promise-to-pay commitments whose date has passed.
 
-    Manually/cron-triggered for V1 — no long-running consumer (see docs/architecture.md).
-    Returns 409 if a sweep is already in progress.
+    Also run automatically by the in-process scheduler when SCHEDULER_ENABLED
+    is set. Returns 409 if a sweep is already in progress.
     """
     try:
         async with acquire_lock("detect-overdue"):
