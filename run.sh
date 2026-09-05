@@ -10,6 +10,10 @@ set -e
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
 
+if [ -d "/opt/homebrew/bin" ]; then
+    export PATH="/opt/homebrew/bin:$PATH"
+fi
+
 if ! docker info >/dev/null 2>&1; then
     echo "Docker doesn't seem to be running. Start Docker Desktop and try again."
     exit 1
@@ -34,9 +38,24 @@ fi
 
 cd "$REPO_ROOT/backend"
 
+PYTHON_BIN=""
+for candidate in /opt/homebrew/Cellar/python@3.13/*/bin/python3.13 /opt/homebrew/bin/python3.13 /opt/homebrew/bin/python3.12 /usr/local/bin/python3.13 /usr/local/bin/python3.12 python3.13 python3.12 python3; do
+    if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+        if "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)' >/dev/null 2>&1; then
+            PYTHON_BIN="$candidate"
+            break
+        fi
+    fi
+done
+
+if [ -z "$PYTHON_BIN" ]; then
+    echo "Python 3.12+ is required to install the backend dependencies."
+    exit 1
+fi
+
 if [ ! -d .venv ]; then
-    echo "==> Creating virtualenv..."
-    python3 -m venv .venv
+    echo "==> Creating virtualenv with $PYTHON_BIN..."
+    "$PYTHON_BIN" -m venv .venv
 fi
 
 # shellcheck disable=SC1091
@@ -75,6 +94,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "==> Starting API with auto-reload at http://localhost:8000"
+kill_port 8000
 uvicorn app.main:app --reload --port 8000 &
 API_PID=$!
 
@@ -92,6 +112,8 @@ fi
 
 echo "==> Starting dashboard at http://localhost:3000 (Ctrl+C to stop everything)"
 echo "    Postgres stays running in Docker — 'cd infra && docker compose down' to stop it."
+kill_port 3000
+rm -rf .next/dev 2>/dev/null || true
 npm run dev &
 WEB_PID=$!
 
