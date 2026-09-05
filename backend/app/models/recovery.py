@@ -171,6 +171,11 @@ class CommunicationLog(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):
         nullable=False,
         default=CommunicationStatus.SIMULATED,
     )
+    # The actual delivery address for a real (non-mock) send — e.g. always
+    # settings.demo_notify_email for the real-reminder-email feature, never
+    # the seeded contact's @example.com. NULL for the existing always-mock
+    # tools, which never had a real destination to record.
+    recipient_email: Mapped[str | None] = mapped_column(String(255))
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     recovery_case: Mapped["RecoveryCase"] = relationship(back_populates="communication_logs")

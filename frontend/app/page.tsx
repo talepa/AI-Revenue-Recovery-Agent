@@ -18,6 +18,7 @@ const ACTION_TONE: Record<RecoveryActionType, "blue" | "violet" | "orange" | "gr
   ESCALATE: "orange",
   WAIT: "gray",
   CLOSE_CASE: "gray",
+  PLACE_VOICE_CALL: "violet",
 };
 
 export default async function DashboardPage() {

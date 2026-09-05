@@ -16,3 +16,5 @@ langchain-google-genai==4.3.6
 langchain-core==1.6.1
 aiokafka==0.14.0
 redis==8.1.0
+httpx==0.28.1
+python-multipart==0.0.20

@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -77,6 +78,7 @@ class CommunicationLogOut(BaseModel):
     subject: str | None
     body: str | None
     status: CommunicationStatus
+    recipient_email: str | None
     sent_at: datetime | None
 
 
@@ -115,6 +117,17 @@ class DetectionSummaryOut(BaseModel):
     case_ids: list[UUID]
     promises_fulfilled: int
     promises_broken: int
+
+
+class SendReminderEmailOut(BaseModel):
+    """Result of a human-triggered real reminder email — always delivered to
+    (or simulated for) settings.demo_notify_email, never a seeded contact."""
+
+    status: Literal["SENT", "SIMULATED", "REJECTED"]
+    to: str | None
+    sent_at: datetime | None
+    policy_decision: PolicyDecisionResult
+    reason: str
 
 
 class RecoveryCaseDetailOut(BaseModel):

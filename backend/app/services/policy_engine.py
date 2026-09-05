@@ -33,6 +33,7 @@ RULE_COOLDOWN_NOT_ELAPSED = "cooldown_not_elapsed"
 RULE_HIGH_VALUE_REVIEW = "high_value_review"
 RULE_REMINDER_APPROVED = "reminder_approved"
 RULE_NO_RESTRICTION = "no_restriction"
+RULE_VOICE_CALL_BLOCKED_ESCALATED = "voice_call_blocked_escalated"
 
 
 @dataclass
@@ -85,6 +86,16 @@ def evaluate_policy(
             decision=PolicyDecisionResult.REJECTED,
             reason="Case is already escalated to a human; automated reminders are suppressed.",
             rule=RULE_ESCALATED_SUPPRESSES_REMINDER,
+        )
+
+    # A human has already taken over an escalated case — no new automated
+    # or agent-driven voice call should start on top of that.
+    if recommended_action == RecoveryActionType.PLACE_VOICE_CALL and case_status == RecoveryCaseStatus.ESCALATED:
+        return PolicyOutcome(
+            final_action=RecoveryActionType.WAIT,
+            decision=PolicyDecisionResult.REJECTED,
+            reason="Case is already escalated to a human; a voice call cannot be started.",
+            rule=RULE_VOICE_CALL_BLOCKED_ESCALATED,
         )
 
     if recommended_action in _REMINDER_ACTIONS:

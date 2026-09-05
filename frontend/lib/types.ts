@@ -64,7 +64,8 @@ export type RecoveryActionType =
   | "TRACK_PROMISE_TO_PAY"
   | "ESCALATE"
   | "WAIT"
-  | "CLOSE_CASE";
+  | "CLOSE_CASE"
+  | "PLACE_VOICE_CALL";
 
 export type RecoveryActionStatus =
   | "PROPOSED"
@@ -120,12 +121,45 @@ export interface PromiseToPay {
 
 export interface CommunicationLog {
   id: string;
-  channel: "EMAIL" | "SMS";
+  channel: "EMAIL" | "SMS" | "VOICE";
   direction: "OUTBOUND" | "INBOUND";
   subject: string | null;
   body: string | null;
   status: "SENT" | "FAILED" | "SIMULATED";
+  recipient_email: string | null;
   sent_at: string | null;
+}
+
+export interface SendReminderEmailResult {
+  status: "SENT" | "SIMULATED" | "REJECTED";
+  to: string | null;
+  sent_at: string | null;
+  policy_decision: PolicyDecisionResult;
+  reason: string;
+}
+
+export interface VoiceOutcome {
+  action_type: RecoveryActionType;
+  policy_decision: PolicyDecisionResult;
+  reason: string;
+}
+
+export interface VoiceStartResult {
+  started: boolean;
+  turn_number: number;
+  agent_line: string | null;
+  agent_audio_base64: string | null;
+  ended: boolean;
+  reason: string | null;
+}
+
+export interface VoiceTurnResult {
+  turn_number: number;
+  transcript_user: string;
+  agent_line: string | null;
+  agent_audio_base64: string | null;
+  ended: boolean;
+  outcome: VoiceOutcome | null;
 }
 
 export type AuditActor = "SYSTEM" | "AI_AGENT" | "POLICY_ENGINE" | "HUMAN";

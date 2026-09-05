@@ -12,6 +12,7 @@ from app.services.policy_engine import (
     RULE_NO_RESTRICTION,
     RULE_REMINDER_APPROVED,
     RULE_REMINDER_CAP_EXCEEDED,
+    RULE_VOICE_CALL_BLOCKED_ESCALATED,
     evaluate_policy,
 )
 
@@ -135,3 +136,31 @@ def test_promise_to_pay_and_wait_are_never_gated():
         assert outcome.final_action == action
         assert outcome.decision == PolicyDecisionResult.APPROVED
         assert outcome.rule == RULE_NO_RESTRICTION
+
+
+def test_voice_call_blocked_on_escalated_case():
+    outcome = evaluate_policy(
+        recommended_action=RecoveryActionType.PLACE_VOICE_CALL,
+        reminder_count=2,
+        days_overdue=50,
+        revenue_at_risk=100_000.0,
+        case_status=RecoveryCaseStatus.ESCALATED,
+        days_since_last_action=10,
+    )
+    assert outcome.final_action == RecoveryActionType.WAIT
+    assert outcome.decision == PolicyDecisionResult.REJECTED
+    assert outcome.rule == RULE_VOICE_CALL_BLOCKED_ESCALATED
+
+
+def test_voice_call_approved_on_non_escalated_case():
+    outcome = evaluate_policy(
+        recommended_action=RecoveryActionType.PLACE_VOICE_CALL,
+        reminder_count=0,
+        days_overdue=10,
+        revenue_at_risk=100_000.0,
+        case_status=RecoveryCaseStatus.OPEN,
+        days_since_last_action=None,
+    )
+    assert outcome.final_action == RecoveryActionType.PLACE_VOICE_CALL
+    assert outcome.decision == PolicyDecisionResult.APPROVED
+    assert outcome.rule == RULE_NO_RESTRICTION

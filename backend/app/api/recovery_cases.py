@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -7,16 +7,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.agents.graph import run_recovery_cycle
+from app.core.config import settings
 from app.core.db import get_db
 from app.core.locks import LockAcquisitionError, acquire_lock
-from app.models import AuditLog, Invoice, RecoveryAction, RecoveryCase
+from app.models import AuditLog, Company, Invoice, RecoveryAction, RecoveryCase
+from app.models.enums import AuditActor, ProposedBy, RecoveryActionStatus, RecoveryActionType
 from app.schemas.recovery import (
     AuditLogOut,
     DetectionSummaryOut,
     RecoveryCaseDetailOut,
     RecoveryCaseListItemOut,
+    SendReminderEmailOut,
 )
+from app.services.action_policy import evaluate_and_record_action, primary_contact
 from app.services.risk_engine import run_detection
+from app.tools.email_provider import send_reminder_email
+from app.tools.mock_tools import execute_mock_action
 
 router = APIRouter(prefix="/recovery-cases", tags=["recovery-cases"])
 
@@ -121,6 +127,94 @@ async def run_recovery_case(case_id: UUID, db: AsyncSession = Depends(get_db)) -
 
     case = await _load_case_detail(db, case_id)
     return case
+
+
+@router.post("/{case_id}/send-reminder-email", response_model=SendReminderEmailOut)
+async def send_reminder_email_endpoint(
+    case_id: UUID, db: AsyncSession = Depends(get_db)
+) -> SendReminderEmailOut:
+    """Human-triggered real reminder email — always to settings.demo_notify_email,
+    never a seeded contact's @example.com. Still goes through evaluate_policy()
+    with the same reminder cap/cooldown rules as an automated cycle (proposed_by
+    is HUMAN here, not AI, but the gate is identical).
+
+    Errors clearly (400) if DEMO_NOTIFY_EMAIL isn't configured, rather than
+    silently falling back to any other address. Returns 409 if a cycle/other
+    action is already running for this case.
+    """
+    if not settings.demo_notify_email:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "DEMO_NOTIFY_EMAIL is not configured. Set it in backend/.env and "
+                "restart the API before sending a reminder."
+            ),
+        )
+
+    case = await db.get(RecoveryCase, case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail="Recovery case not found")
+
+    try:
+        async with acquire_lock(f"recovery-case:{case_id}"):
+            invoice = await db.get(Invoice, case.invoice_id)
+            company = await db.get(Company, case.company_id)
+            contact = await primary_contact(db, case.company_id)
+
+            recorded = await evaluate_and_record_action(
+                db, case, invoice, RecoveryActionType.SEND_EMAIL, proposed_by=ProposedBy.HUMAN
+            )
+            action = recorded.action
+            outcome = recorded.outcome
+            now = datetime.now(timezone.utc)
+
+            if outcome.final_action == RecoveryActionType.SEND_EMAIL:
+                result = await send_reminder_email(db, case, invoice, contact, company.name)
+                action.status = RecoveryActionStatus.EXECUTED
+                action.executed_at = now
+                action.result = result
+                to = result["to"]
+                status = result["status"]  # "SENT" or "SIMULATED"
+                sent_at: datetime | None = now
+                description = (
+                    f"Real reminder email {'sent' if status == 'SENT' else 'simulated (no email provider configured)'} "
+                    f"to {to}."
+                )
+            else:
+                result = await execute_mock_action(db, outcome.final_action, case, invoice, contact)
+                action.status = RecoveryActionStatus.EXECUTED
+                action.executed_at = now
+                action.result = result
+                to = None
+                status = "REJECTED"
+                sent_at = None
+                description = f"Policy substituted {outcome.final_action.value} instead of SEND_EMAIL: {outcome.reason}"
+
+            await db.flush()
+            db.add(
+                AuditLog(
+                    recovery_case_id=case.id,
+                    entity_type="recovery_action",
+                    entity_id=action.id,
+                    event_type="EMAIL_SENT" if outcome.final_action == RecoveryActionType.SEND_EMAIL else "POLICY_SUBSTITUTED",
+                    actor=AuditActor.SYSTEM,
+                    description=description,
+                    occurred_at=now,
+                )
+            )
+            await db.commit()
+    except LockAcquisitionError:
+        raise HTTPException(
+            status_code=409, detail="A recovery cycle is already running for this case"
+        ) from None
+
+    return SendReminderEmailOut(
+        status=status,
+        to=to,
+        sent_at=sent_at,
+        policy_decision=outcome.decision,
+        reason=outcome.reason,
+    )
 
 
 @router.get("/{case_id}/audit-trail", response_model=list[AuditLogOut])

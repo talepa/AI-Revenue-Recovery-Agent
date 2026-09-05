@@ -68,6 +68,7 @@ const ACTION_LABELS: Record<string, string> = {
   ESCALATE: "Escalated",
   WAIT: "Waiting",
   CLOSE_CASE: "Closed, unrecovered",
+  PLACE_VOICE_CALL: "Voice call",
 };
 
 export function humanizeActionType(action: string): string {

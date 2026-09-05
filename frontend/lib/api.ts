@@ -5,6 +5,9 @@ import type {
   PolicyOverrideStats,
   RecoveryCaseDetail,
   RecoveryCaseListItem,
+  SendReminderEmailResult,
+  VoiceStartResult,
+  VoiceTurnResult,
 } from "./types";
 
 // Server-only — never exposed to the browser (no NEXT_PUBLIC_ prefix). All
@@ -71,3 +74,31 @@ export const simulatePayment = (invoiceId: string, amount?: string) =>
     method: "POST",
     body: amount ? JSON.stringify({ amount }) : undefined,
   });
+
+export const sendReminderEmail = (caseId: string) =>
+  apiFetch<SendReminderEmailResult>(`/recovery-cases/${caseId}/send-reminder-email`, {
+    method: "POST",
+  });
+
+export const startVoiceCall = (caseId: string) =>
+  apiFetch<VoiceStartResult>(`/recovery-cases/${caseId}/voice/start`, { method: "POST" });
+
+// Bypasses apiFetch (JSON-only) — this sends multipart/form-data (the
+// recorded audio Blob, or a typed fallback reply) straight through.
+export async function submitVoiceTurn(caseId: string, formData: FormData): Promise<VoiceTurnResult> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}/recovery-cases/${caseId}/voice/turn`, {
+      method: "POST",
+      body: formData,
+      cache: "no-store",
+    });
+  } catch {
+    throw new ApiError(`Could not reach the API at ${API_BASE_URL}. Is the backend running? (try ./run.sh)`);
+  }
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new ApiError(body.detail ?? "Voice turn request failed", response.status);
+  }
+  return response.json() as Promise<VoiceTurnResult>;
+}

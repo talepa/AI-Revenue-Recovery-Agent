@@ -5,6 +5,8 @@ import { Badge } from "@/components/Badge";
 import { AuditTimeline } from "@/components/AuditTimeline";
 import { Field, Section } from "@/components/Section";
 import { runRecoveryCaseAction, simulatePaymentAction } from "@/app/actions";
+import { SendReminderEmailButton } from "@/components/SendReminderEmailButton";
+import { VoiceCallPanel } from "@/components/VoiceCallPanel";
 import { ApiError, getRecoveryCase } from "@/lib/api";
 import {
   actionStatusTone,
@@ -73,7 +75,7 @@ export default async function CaseDetailPage({
         </div>
 
         {!isTerminal && (
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap items-start gap-3">
             <ActionButton
               label="Simulate payment"
               pendingLabel="Recording…"
@@ -85,6 +87,7 @@ export default async function CaseDetailPage({
               pendingLabel="Running…"
               onRun={runRecoveryCaseAction.bind(null, caseDetail.id)}
             />
+            <SendReminderEmailButton caseId={caseDetail.id} />
           </div>
         )}
       </div>
@@ -243,12 +246,23 @@ export default async function CaseDetailPage({
             )}
           </Section>
 
+          {!isTerminal && (
+            <Section title="Hinglish Recovery Call">
+              <VoiceCallPanel
+                caseId={caseDetail.id}
+                disabled={caseDetail.status === "ESCALATED"}
+                disabledReason="case is already escalated to a human — evaluate_policy() blocks new calls."
+              />
+            </Section>
+          )}
+
           {caseDetail.communication_logs.length > 0 && (
             <Section title="Communications">
               <ul className="space-y-3">
                 {caseDetail.communication_logs.map((log) => (
                   <li key={log.id} className="rounded-lg border border-slate-100 p-3 text-sm">
                     <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone={log.channel === "VOICE" ? "violet" : "gray"}>{titleCase(log.channel)}</Badge>
                       <Badge tone={log.direction === "OUTBOUND" ? "blue" : "violet"}>
                         {titleCase(log.direction)}
                       </Badge>
@@ -257,6 +271,11 @@ export default async function CaseDetailPage({
                         <span className="text-xs text-slate-400">{formatDateTime(log.sent_at)}</span>
                       )}
                     </div>
+                    {log.recipient_email && (
+                      <p className="mt-1 text-xs text-slate-500">
+                        Delivered to <span className="font-mono">{log.recipient_email}</span>
+                      </p>
+                    )}
                     {log.body && <p className="mt-1 text-slate-600">{log.body}</p>}
                   </li>
                 ))}

@@ -8,6 +8,7 @@ graph is fully runnable and testable with zero external dependencies or
 cost. Presence of a key is the switch — no separate feature flag.
 """
 
+import asyncio
 import logging
 from typing import Any
 
@@ -16,9 +17,19 @@ from app.agents.prompts import (
     INTERVENTION_SYSTEM_PROMPT,
     build_diagnosis_prompt,
     build_intervention_prompt,
+    build_voice_system_prompt,
+    build_voice_turn_prompt,
 )
-from app.agents.schemas import DiagnosisResult, InterventionRecommendation
+from app.agents.schemas import DiagnosisResult, InterventionRecommendation, VoiceTurnResult
 from app.core.config import settings
+
+MAX_VOICE_TURNS = 4
+
+# A real provider call that hangs, rate-limits, or otherwise errors must
+# never surface as a 500 to the caller — it falls back to the deterministic
+# rule-based path instead, same as "no key configured" does. This bounds
+# how long a caller ever waits on a real call before that fallback kicks in.
+LLM_TIMEOUT_SECONDS = 15
 
 FALLBACK_MODEL_NAME = "rule-based-fallback"
 GEMINI_DEFAULT_MODEL = "gemini-2.5-flash"
@@ -75,6 +86,29 @@ def _log_llm_call(stage: str, provider: str, model_name: str, *, llm_called: boo
     )
 
 
+async def _invoke_structured_llm(
+    structured_llm: Any, messages: list, *, stage: str, provider: str, model_name: str
+) -> Any | None:
+    """Returns the parsed structured result, or None on any failure (rate
+    limit, timeout, network error, malformed response) — callers fall back
+    to their rule-based path on None rather than letting the exception
+    surface as a 500. Every other optional integration in this app (Kafka,
+    Redis, Resend, Sarvam) fails the same way: logged, never raised."""
+    try:
+        result = await asyncio.wait_for(structured_llm.ainvoke(messages), timeout=LLM_TIMEOUT_SECONDS)
+    except Exception:
+        logger.warning(
+            "llm %s call failed (provider=%s model=%s); falling back to rule-based",
+            stage,
+            provider,
+            model_name,
+            exc_info=True,
+        )
+        return None
+    _log_llm_call(stage, provider, model_name, llm_called=True)
+    return result
+
+
 async def diagnose(invoice_context: dict, customer_context: dict) -> tuple[DiagnosisResult, str]:
     provider, _configured_model = configured_llm()
     llm, model_name = _llm_chat()
@@ -86,9 +120,11 @@ async def diagnose(invoice_context: dict, customer_context: dict) -> tuple[Diagn
             SystemMessage(content=DIAGNOSIS_SYSTEM_PROMPT),
             HumanMessage(content=build_diagnosis_prompt(invoice_context, customer_context)),
         ]
-        result = await structured_llm.ainvoke(messages)
-        _log_llm_call("diagnose", provider, model_name, llm_called=True)
-        return result, model_name
+        result = await _invoke_structured_llm(
+            structured_llm, messages, stage="diagnose", provider=provider, model_name=model_name
+        )
+        if result is not None:
+            return result, model_name
 
     _log_llm_call("diagnose", provider, FALLBACK_MODEL_NAME, llm_called=False)
     return _rule_based_diagnosis(invoice_context, customer_context), FALLBACK_MODEL_NAME
@@ -109,9 +145,11 @@ async def recommend(
                 content=build_intervention_prompt(invoice_context, customer_context, diagnosis, reminder_count)
             ),
         ]
-        result = await structured_llm.ainvoke(messages)
-        _log_llm_call("recommend", provider, model_name, llm_called=True)
-        return result, model_name
+        result = await _invoke_structured_llm(
+            structured_llm, messages, stage="recommend", provider=provider, model_name=model_name
+        )
+        if result is not None:
+            return result, model_name
 
     _log_llm_call("recommend", provider, FALLBACK_MODEL_NAME, llm_called=False)
     return _rule_based_intervention(invoice_context, reminder_count), FALLBACK_MODEL_NAME
@@ -168,4 +206,74 @@ def _rule_based_intervention(invoice_context: dict, reminder_count: int) -> Inte
         )
     return InterventionRecommendation(
         action="ESCALATE", rationale="Multiple reminders sent without payment."
+    )
+
+
+async def voice_turn(
+    invoice_context: dict, customer_context: dict, transcript_so_far: list[dict], turn_number: int
+) -> tuple[VoiceTurnResult, str]:
+    """One turn of the Hinglish voice-call demo. Only ever *proposes*
+    proposed_action — app/api/voice.py runs it through evaluate_policy()
+    before anything executes, exactly like recommend() above."""
+    provider, _configured_model = configured_llm()
+    llm, model_name = _llm_chat()
+    if llm is not None:
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        structured_llm = llm.with_structured_output(VoiceTurnResult)
+        messages = [
+            SystemMessage(content=build_voice_system_prompt(turn_number, MAX_VOICE_TURNS)),
+            HumanMessage(
+                content=build_voice_turn_prompt(invoice_context, customer_context, transcript_so_far, turn_number)
+            ),
+        ]
+        result = await _invoke_structured_llm(
+            structured_llm, messages, stage="voice_turn", provider=provider, model_name=model_name
+        )
+        if result is not None:
+            return result, model_name
+
+    _log_llm_call("voice_turn", provider, FALLBACK_MODEL_NAME, llm_called=False)
+    return _rule_based_voice_turn(transcript_so_far, turn_number), FALLBACK_MODEL_NAME
+
+
+def _rule_based_voice_turn(transcript_so_far: list[dict], turn_number: int) -> VoiceTurnResult:
+    if not transcript_so_far:
+        return VoiceTurnResult(
+            agent_line_hi=(
+                "Namaste! Main AI Revenue Recovery se baat kar raha hoon. Aapka invoice abhi tak "
+                "pending hai — kya aap iske baare mein baat kar sakte hain?"
+            ),
+            concluded=False,
+            proposed_action="NONE",
+        )
+
+    last_reply = transcript_so_far[-1]["text"].lower()
+
+    promise_words = ("haan", "promise", "kar dunga", "de dunga", "kal", "pay kar")
+    payment_link_words = ("link", "kaise pay", "payment link", "how to pay", "upi")
+    refusal_words = ("nahi", "can't", "cannot", "busy", "not now", "no money")
+
+    if any(w in last_reply for w in promise_words):
+        return VoiceTurnResult(
+            agent_line_hi="Bahut accha! Main aapka promise note kar raha hoon. Dhanyavaad, shukriya!",
+            concluded=True,
+            proposed_action="TRACK_PROMISE_TO_PAY",
+        )
+    if any(w in last_reply for w in payment_link_words):
+        return VoiceTurnResult(
+            agent_line_hi="Theek hai, main aapko abhi ek payment link bhej raha hoon.",
+            concluded=True,
+            proposed_action="SEND_PAYMENT_LINK",
+        )
+    if turn_number >= MAX_VOICE_TURNS or any(w in last_reply for w in refusal_words):
+        return VoiceTurnResult(
+            agent_line_hi="Samajh gaya. Main isse hamare finance team ko escalate kar raha hoon.",
+            concluded=True,
+            proposed_action="ESCALATE",
+        )
+    return VoiceTurnResult(
+        agent_line_hi="Samajh sakta hoon. Kya aap kal tak confirm kar sakte hain ki payment kab hoga?",
+        concluded=False,
+        proposed_action="NONE",
     )
