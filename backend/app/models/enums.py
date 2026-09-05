@@ -61,6 +61,10 @@ class RecoveryActionType(str, Enum):
     ESCALATE = "ESCALATE"
     WAIT = "WAIT"
     CLOSE_CASE = "CLOSE_CASE"
+    # Human-triggered only (case-page "Start Hinglish recovery call" button)
+    # — never something the automated LangGraph diagnose/recommend cycle or
+    # the scheduler proposes on its own. See app/api/voice.py.
+    PLACE_VOICE_CALL = "PLACE_VOICE_CALL"
 
 
 class RecoveryActionStatus(str, Enum):
@@ -92,6 +96,7 @@ class PromiseToPayStatus(str, Enum):
 class CommunicationChannel(str, Enum):
     EMAIL = "EMAIL"
     SMS = "SMS"
+    VOICE = "VOICE"
 
 
 class CommunicationDirection(str, Enum):

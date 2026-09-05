@@ -100,11 +100,13 @@ The trained model (`app/ml/artifacts/recovery_risk_model.json`) and its metrics 
 By default (no config needed) diagnosis and intervention use a deterministic rule-based fallback — the whole workflow runs and is fully testable with zero external cost or setup. To use a real LLM instead, add to `backend/.env`:
 
 ```
-OPENAI_API_KEY=sk-...
-LLM_MODEL=gpt-4o-mini   # optional, this is the default
+GOOGLE_API_KEY=...                 # from https://aistudio.google.com/apikey
+LLM_MODEL=gemini-2.5-flash         # optional; this is the Gemini default
 ```
 
-No code change needed — `app/agents/llm_client.py` picks whichever path is configured automatically, and `agent_decisions.model_name` always records which one actually ran.
+OpenAI still works as an alternate (`OPENAI_API_KEY`, default model `gpt-4o-mini`). If both keys are set, Gemini is used. `app/agents/llm_client.py` picks the path from config automatically, and `agent_decisions.model_name` always records which model actually ran.
+
+Set `SCHEDULER_ENABLED=true` in `backend/.env` to run detection + one recovery cycle per active (`OPEN`/`MONITORING`) case on a timer. The HTTP endpoints remain; the scheduler calls the same services and locks. CI leaves this off.
 
 A broken promise-to-pay (see `app/services/promise_tracking.py`) forces escalation via `app/services/policy_engine.py`'s `has_broken_promise` check — same override pattern as the high-value/overdue rule, and it also feeds into the diagnosis context so the reasoning reflects it honestly.
 

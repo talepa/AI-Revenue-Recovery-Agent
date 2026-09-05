@@ -5,6 +5,8 @@ import { Badge } from "@/components/Badge";
 import { AuditTimeline } from "@/components/AuditTimeline";
 import { Field, Section } from "@/components/Section";
 import { runRecoveryCaseAction, simulatePaymentAction } from "@/app/actions";
+import { SendReminderEmailButton } from "@/components/SendReminderEmailButton";
+import { VoiceCallPanel } from "@/components/VoiceCallPanel";
 import { ApiError, getRecoveryCase } from "@/lib/api";
 import {
   actionStatusTone,
@@ -73,7 +75,7 @@ export default async function CaseDetailPage({
         </div>
 
         {!isTerminal && (
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap items-start gap-3">
             <ActionButton
               label="Simulate payment"
               pendingLabel="Recording…"
@@ -85,6 +87,7 @@ export default async function CaseDetailPage({
               pendingLabel="Running…"
               onRun={runRecoveryCaseAction.bind(null, caseDetail.id)}
             />
+            <SendReminderEmailButton caseId={caseDetail.id} />
           </div>
         )}
       </div>
@@ -200,33 +203,58 @@ export default async function CaseDetailPage({
               <p className="text-sm text-slate-400">No actions taken yet.</p>
             ) : (
               <ol className="space-y-4">
-                {caseDetail.actions.map((action) => (
-                  <li key={action.id} className="rounded-lg border border-slate-100 p-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs font-semibold text-slate-400">
-                        #{action.sequence_number}
-                      </span>
-                      <span className="text-sm font-medium text-slate-900">
-                        {titleCase(action.action_type)}
-                      </span>
-                      <Badge tone={actionStatusTone(action.status)}>{titleCase(action.status)}</Badge>
-                      {action.executed_at && (
-                        <span className="text-xs text-slate-400">
-                          {formatDateTime(action.executed_at)}
+                {caseDetail.actions.map((action) => {
+                  const overridden =
+                    action.recommended_action_type !== null &&
+                    action.recommended_action_type !== action.action_type;
+                  return (
+                    <li key={action.id} className="rounded-lg border border-slate-100 p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-semibold text-slate-400">
+                          #{action.sequence_number}
                         </span>
-                      )}
-                    </div>
-                    {action.policy_decisions.map((pd) => (
-                      <div key={pd.id} className="mt-2 flex items-start gap-2 text-xs">
-                        <Badge tone={policyDecisionTone(pd.decision)}>{titleCase(pd.decision)}</Badge>
-                        <span className="text-slate-500">{pd.reason}</span>
+                        <span className="text-sm font-medium text-slate-900">
+                          {titleCase(action.action_type)}
+                        </span>
+                        <Badge tone={actionStatusTone(action.status)}>{titleCase(action.status)}</Badge>
+                        {action.executed_at && (
+                          <span className="text-xs text-slate-400">
+                            {formatDateTime(action.executed_at)}
+                          </span>
+                        )}
                       </div>
-                    ))}
-                  </li>
-                ))}
+                      {overridden && (
+                        <p className="mt-2 text-xs text-amber-700">
+                          AI suggested{" "}
+                          <span className="font-semibold">
+                            {titleCase(action.recommended_action_type!)}
+                          </span>
+                          {" → "}policy overrode to{" "}
+                          <span className="font-semibold">{titleCase(action.action_type)}</span>
+                        </p>
+                      )}
+                      {action.policy_decisions.map((pd) => (
+                        <div key={pd.id} className="mt-2 flex items-start gap-2 text-xs">
+                          <Badge tone={policyDecisionTone(pd.decision)}>{titleCase(pd.decision)}</Badge>
+                          <span className="text-slate-500">{pd.reason}</span>
+                        </div>
+                      ))}
+                    </li>
+                  );
+                })}
               </ol>
             )}
           </Section>
+
+          {!isTerminal && (
+            <Section title="Hinglish Recovery Call">
+              <VoiceCallPanel
+                caseId={caseDetail.id}
+                disabled={caseDetail.status === "ESCALATED"}
+                disabledReason="case is already escalated to a human — evaluate_policy() blocks new calls."
+              />
+            </Section>
+          )}
 
           {caseDetail.communication_logs.length > 0 && (
             <Section title="Communications">
@@ -234,6 +262,7 @@ export default async function CaseDetailPage({
                 {caseDetail.communication_logs.map((log) => (
                   <li key={log.id} className="rounded-lg border border-slate-100 p-3 text-sm">
                     <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone={log.channel === "VOICE" ? "violet" : "gray"}>{titleCase(log.channel)}</Badge>
                       <Badge tone={log.direction === "OUTBOUND" ? "blue" : "violet"}>
                         {titleCase(log.direction)}
                       </Badge>
@@ -242,6 +271,11 @@ export default async function CaseDetailPage({
                         <span className="text-xs text-slate-400">{formatDateTime(log.sent_at)}</span>
                       )}
                     </div>
+                    {log.recipient_email && (
+                      <p className="mt-1 text-xs text-slate-500">
+                        Delivered to <span className="font-mono">{log.recipient_email}</span>
+                      </p>
+                    )}
                     {log.body && <p className="mt-1 text-slate-600">{log.body}</p>}
                   </li>
                 ))}

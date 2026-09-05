@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Geist } from "next/font/google";
+import { LiveRefresh } from "@/components/LiveRefresh";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -28,6 +29,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                 portfolio demo · synthetic data
               </span>
             </Link>
+            <LiveRefresh />
           </div>
         </header>
         <main className="mx-auto max-w-7xl px-6 py-8">{children}</main>

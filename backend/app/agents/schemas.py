@@ -27,3 +27,18 @@ class InterventionRecommendation(BaseModel):
         "CLOSE_CASE",
     ]
     rationale: str = Field(description="Brief explanation for why this action, 1-2 sentences")
+
+
+class VoiceTurnResult(BaseModel):
+    """One turn of the Hinglish voice-call demo (app/api/voice.py).
+
+    agent_line_hi is spoken via Sarvam TTS, never executed as a tool.
+    proposed_action is only a recommendation — evaluate_policy() decides
+    whether it actually runs, exactly like InterventionRecommendation.action
+    does for the LangGraph workflow. "NONE" (still talking, nothing to
+    decide yet) never reaches the policy engine at all.
+    """
+
+    agent_line_hi: str = Field(description="What the agent says next, in Hinglish (Devanagari-light, code-mixed)")
+    concluded: bool = Field(description="True if this turn ends the call with a decision")
+    proposed_action: Literal["TRACK_PROMISE_TO_PAY", "SEND_PAYMENT_LINK", "ESCALATE", "NONE"]

@@ -89,11 +89,11 @@ Full architecture writeup: [docs/architecture.md](docs/architecture.md).
 
 `POST /recovery-cases/{id}/run` ([backend/app/agents/graph.py](backend/app/agents/graph.py)) advances a case through one full cycle of the diagram above: load context → re-score risk → LLM diagnosis → LLM intervention recommendation → **deterministic policy check** → execute the policy-approved action → record the outcome. It's genuinely wired, not mocked out — the policy engine really does override the agent's recommendation when a rule fires (e.g. a reminder proposed inside the cooldown window gets rejected and replaced with `WAIT`, logged in `policy_decisions` either way).
 
-No `OPENAI_API_KEY`? Diagnosis/intervention fall back to a deterministic rule-based agent automatically ([app/agents/llm_client.py](backend/app/agents/llm_client.py)) — the graph, policy engine, and audit trail are fully exercised either way; add a key to `backend/.env` to switch to a real LLM, no code change needed. `agent_decisions.model_name` always records which path actually ran (`"rule-based-fallback"` or the real model name), so it's never ambiguous which one produced a given decision.
+No `GOOGLE_API_KEY` (or `OPENAI_API_KEY`)? Diagnosis/intervention fall back to a deterministic rule-based agent automatically ([app/agents/llm_client.py](backend/app/agents/llm_client.py)) — the graph, policy engine, and audit trail are fully exercised either way. Add a Google AI Studio key to `backend/.env` to use Gemini (preferred), or an OpenAI key as an alternate; `agent_decisions.model_name` always records which path actually ran (`"rule-based-fallback"` or the real model name).
 
 `POST /invoices/{id}/simulate-payment` stands in for a real payment webhook, so "customer pays → case closes" is actually demonstrable end-to-end.
 
-A promise-to-pay that goes unfulfilled is treated as a hard fact, not left for the LLM to notice: `POST /recovery-cases/detect-overdue` also resolves any pending promise whose date has passed — marking it `FULFILLED` if the invoice got paid, `BROKEN` if not — and a broken promise **forces escalation** on the case's next cycle, overriding whatever the agent recommends, the same way the high-value/overdue rule does.
+A broken promise-to-pay that goes unfulfilled is treated as a hard fact, not left for the LLM to notice: `POST /recovery-cases/detect-overdue` (and the scheduler tick) also resolves any pending promise whose date has passed — marking it `FULFILLED` if the invoice got paid, `BROKEN` if not — and a broken promise **forces escalation** on the case's next cycle, overriding whatever the agent recommends, the same way the high-value/overdue rule does.
 
 ## Events (Kafka)
 
@@ -101,7 +101,9 @@ Every important fact the app produces — an invoice going overdue, a case openi
 
 ## Idempotency (Redis)
 
-`POST /recovery-cases/{id}/run` and `POST /recovery-cases/detect-overdue` are locked ([backend/app/core/locks.py](backend/app/core/locks.py)) so two overlapping triggers of the same operation — a retried request, a double-click, an overlapping cron — can't race and double-execute actions. The second caller gets `409 Conflict`, not a silent duplicate. Verified with genuinely concurrent requests: firing two `POST .../run` calls at the same case in parallel produced exactly one new action, not two, with one request returning `200` and the other `409`. No `REDIS_URL` configured? Falls back to an in-process lock — same pattern as the LLM and Kafka — safe for a single instance, though (honestly) it can't coordinate across multiple app instances the way real Redis does.
+`POST /recovery-cases/{id}/run` and `POST /recovery-cases/detect-overdue` are locked ([backend/app/core/locks.py](backend/app/core/locks.py)) so two overlapping triggers of the same operation — a retried request, a double-click, the in-process scheduler — can't race and double-execute actions. The second caller gets `409 Conflict`, not a silent duplicate. Verified with genuinely concurrent requests: firing two `POST .../run` calls at the same case in parallel produced exactly one new action, not two, with one request returning `200` and the other `409`. No `REDIS_URL` configured? Falls back to an in-process lock — same pattern as the LLM and Kafka — safe for a single instance, though (honestly) it can't coordinate across multiple app instances the way real Redis does.
+
+With `SCHEDULER_ENABLED=true` the API runs those same two operations on a timer (`app/services/scheduler.py`): detect overdue, then one recovery cycle per `OPEN`/`MONITORING` case. The dashboard polls every 5s (`LiveRefresh`) so you do not have to click Run. Manual buttons still work as overrides. CI leaves the scheduler off.
 
 ## The dashboard
 
