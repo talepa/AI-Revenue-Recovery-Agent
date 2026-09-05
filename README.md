@@ -1,6 +1,5 @@
 # AI Revenue Recovery Agent
 
-[![CI](https://github.com/talepa/AI-Revenue-Recovery-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/talepa/AI-Revenue-Recovery-Agent/actions/workflows/ci.yml)
 
 An AI-assisted system that detects at-risk B2B revenue (overdue invoices), decides how to recover it, and executes that decision inside deterministic financial guardrails — instead of relying on fixed retry rules or manual finance follow-ups.
 
