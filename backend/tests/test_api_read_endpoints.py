@@ -198,6 +198,33 @@ def test_dashboard_metrics_endpoint(client):
     assert data["escalated_cases"] == 1
 
 
+def test_dashboard_policy_overrides_endpoint(client):
+    resp = client.get("/dashboard/policy-overrides")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total_evaluated"] == 9
+    assert data["override_count"] == 1
+    assert data["override_rate"] == pytest.approx(1 / 9)
+    assert data["by_rule"]["high_value_overdue_forced_escalate"] == 1
+    assert len(data["examples"]) == 1
+    assert data["examples"][0]["company_name"] == "Vertex Infra Solutions"
+    assert data["examples"][0]["recommended_action_type"] == "SEND_PAYMENT_LINK"
+    assert data["examples"][0]["action_type"] == "ESCALATE"
+
+
+def test_recovery_action_out_includes_recommended_action_type(client):
+    # Vertex's third action is the flagship override: recommended a
+    # reminder, policy forced escalation instead.
+    cases = client.get("/recovery-cases").json()
+    vertex_id = next(c["id"] for c in cases if c["invoice_number"] == "INV-VERTEX-3010")
+    detail = client.get(f"/recovery-cases/{vertex_id}").json()
+
+    third_action = next(a for a in detail["actions"] if a["sequence_number"] == 3)
+    assert third_action["recommended_action_type"] == "SEND_PAYMENT_LINK"
+    assert third_action["action_type"] == "ESCALATE"
+    assert third_action["policy_decisions"][0]["rule"] == "high_value_overdue_forced_escalate"
+
+
 def test_detect_overdue_endpoint_is_idempotent_against_seeded_data(client):
     # The seeded scenarios are already fully created (Phase 3 hand-seeds
     # cases directly), so the engine should find nothing new to do.

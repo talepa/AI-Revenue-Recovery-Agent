@@ -89,6 +89,13 @@ class RecoveryAction(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):
     proposed_by: Mapped[ProposedBy] = mapped_column(
         SAEnum(ProposedBy, name="proposed_by"), nullable=False, default=ProposedBy.AI
     )
+    # What the LLM/rule-based agent actually recommended before the policy
+    # engine ran, captured verbatim so "AI suggested X, policy did Y" is a
+    # direct column comparison against action_type rather than an inferred
+    # pairing. Nullable: rows created before this column existed have none.
+    recommended_action_type: Mapped[RecoveryActionType | None] = mapped_column(
+        SAEnum(RecoveryActionType, name="recovery_action_type")
+    )
     sequence_number: Mapped[int] = mapped_column(Integer, nullable=False)
     result: Mapped[dict | None] = mapped_column(JSONB)
     executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -180,6 +187,11 @@ class PolicyDecision(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):
         SAEnum(PolicyDecisionResult, name="policy_decision_result"), nullable=False
     )
     reason: Mapped[str] = mapped_column(Text, nullable=False)
+    # Machine-readable branch tag from evaluate_policy() (see
+    # app/services/policy_engine.py's RULE_* constants) — `reason` has
+    # numbers baked into the string and can't be grouped for stats; this can.
+    # Nullable: rows created before this column existed have none.
+    rule: Mapped[str | None] = mapped_column(String(100))
     evaluated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

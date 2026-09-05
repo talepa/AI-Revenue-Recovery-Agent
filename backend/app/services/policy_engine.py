@@ -20,12 +20,27 @@ ESCALATION_DAYS_THRESHOLD = 45
 
 _REMINDER_ACTIONS = (RecoveryActionType.SEND_EMAIL, RecoveryActionType.SEND_PAYMENT_LINK)
 
+# Machine-readable tags for each branch below, persisted on PolicyDecision.rule
+# so live cycles and hand-seeded demo data (app/seed/run.py) can be aggregated
+# together for the AI-oversight dashboard (app/services/metrics.py). Keep
+# these in sync with seed/run.py's hand-authored rows — both must use the
+# exact same strings for the rollup to be meaningful.
+RULE_BROKEN_PROMISE_FORCED_ESCALATE = "broken_promise_forced_escalate"
+RULE_HIGH_VALUE_OVERDUE_FORCED_ESCALATE = "high_value_overdue_forced_escalate"
+RULE_ESCALATED_SUPPRESSES_REMINDER = "escalated_suppresses_reminder"
+RULE_REMINDER_CAP_EXCEEDED = "reminder_cap_exceeded"
+RULE_COOLDOWN_NOT_ELAPSED = "cooldown_not_elapsed"
+RULE_HIGH_VALUE_REVIEW = "high_value_review"
+RULE_REMINDER_APPROVED = "reminder_approved"
+RULE_NO_RESTRICTION = "no_restriction"
+
 
 @dataclass
 class PolicyOutcome:
     final_action: RecoveryActionType
     decision: PolicyDecisionResult
     reason: str
+    rule: str
 
 
 def evaluate_policy(
@@ -45,6 +60,7 @@ def evaluate_policy(
             final_action=RecoveryActionType.ESCALATE,
             decision=PolicyDecisionResult.APPROVED,
             reason="Customer did not honor a promised payment date; escalation forced regardless of AI recommendation.",
+            rule=RULE_BROKEN_PROMISE_FORCED_ESCALATE,
         )
 
     # Forced escalation: high value + significantly overdue overrides everything,
@@ -59,6 +75,7 @@ def evaluate_policy(
                 f"ESCALATION_THRESHOLD ({ESCALATION_DAYS_THRESHOLD}); escalation forced "
                 f"regardless of AI recommendation."
             ),
+            rule=RULE_HIGH_VALUE_OVERDUE_FORCED_ESCALATE,
         )
 
     # Once escalated, a human has taken over — automated reminders stop.
@@ -67,6 +84,7 @@ def evaluate_policy(
             final_action=RecoveryActionType.WAIT,
             decision=PolicyDecisionResult.REJECTED,
             reason="Case is already escalated to a human; automated reminders are suppressed.",
+            rule=RULE_ESCALATED_SUPPRESSES_REMINDER,
         )
 
     if recommended_action in _REMINDER_ACTIONS:
@@ -78,6 +96,7 @@ def evaluate_policy(
                     f"Reminder count ({reminder_count}) has reached MAX_EMAIL_REMINDERS "
                     f"({MAX_EMAIL_REMINDERS}); escalating instead."
                 ),
+                rule=RULE_REMINDER_CAP_EXCEEDED,
             )
         if days_since_last_action is not None and days_since_last_action < MIN_TIME_BETWEEN_REMINDERS_DAYS:
             return PolicyOutcome(
@@ -87,6 +106,7 @@ def evaluate_policy(
                     f"Only {days_since_last_action} day(s) since the last reminder; "
                     f"MIN_TIME_BETWEEN_REMINDERS_DAYS ({MIN_TIME_BETWEEN_REMINDERS_DAYS}) not yet elapsed."
                 ),
+                rule=RULE_COOLDOWN_NOT_ELAPSED,
             )
         if revenue_at_risk >= HIGH_VALUE_THRESHOLD:
             return PolicyOutcome(
@@ -96,11 +116,13 @@ def evaluate_policy(
                     f"Amount (₹{revenue_at_risk:,.2f}) exceeds HIGH_VALUE_THRESHOLD; "
                     f"action approved but flagged for human review."
                 ),
+                rule=RULE_HIGH_VALUE_REVIEW,
             )
         return PolicyOutcome(
             final_action=recommended_action,
             decision=PolicyDecisionResult.APPROVED,
             reason=f"Reminder count ({reminder_count}) below MAX_EMAIL_REMINDERS ({MAX_EMAIL_REMINDERS}).",
+            rule=RULE_REMINDER_APPROVED,
         )
 
     # TRACK_PROMISE_TO_PAY, ESCALATE, WAIT, CLOSE_CASE: no additional gating in V1.
@@ -108,4 +130,5 @@ def evaluate_policy(
         final_action=recommended_action,
         decision=PolicyDecisionResult.APPROVED,
         reason=f"No policy restriction applies to {recommended_action.value}.",
+        rule=RULE_NO_RESTRICTION,
     )

@@ -28,6 +28,7 @@ class PolicyDecisionOut(BaseModel):
     policy_name: str
     decision: PolicyDecisionResult
     reason: str
+    rule: str | None
     evaluated_at: datetime
 
 
@@ -36,6 +37,7 @@ class RecoveryActionOut(BaseModel):
 
     id: UUID
     action_type: RecoveryActionType
+    recommended_action_type: RecoveryActionType | None
     status: RecoveryActionStatus
     proposed_by: ProposedBy
     sequence_number: int

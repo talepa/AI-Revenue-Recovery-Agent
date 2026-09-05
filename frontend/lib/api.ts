@@ -2,6 +2,7 @@ import type {
   DashboardMetrics,
   DetectionSummary,
   Invoice,
+  PolicyOverrideStats,
   RecoveryCaseDetail,
   RecoveryCaseListItem,
 } from "./types";
@@ -48,6 +49,9 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const getDashboardMetrics = () => apiFetch<DashboardMetrics>("/dashboard/metrics");
+
+export const getPolicyOverrideStats = () =>
+  apiFetch<PolicyOverrideStats>("/dashboard/policy-overrides");
 
 export const listRecoveryCases = () => apiFetch<RecoveryCaseListItem[]>("/recovery-cases");
 

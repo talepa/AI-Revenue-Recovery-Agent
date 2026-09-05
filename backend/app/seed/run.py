@@ -51,6 +51,12 @@ from app.models.enums import (
     RiskLevel,
 )
 from app.seed.data import COMPANIES, CompanySpec
+from app.services.policy_engine import (
+    RULE_HIGH_VALUE_OVERDUE_FORCED_ESCALATE,
+    RULE_HIGH_VALUE_REVIEW,
+    RULE_NO_RESTRICTION,
+    RULE_REMINDER_APPROVED,
+)
 
 TODAY = date.today()
 
@@ -204,6 +210,7 @@ async def scenario_a_low_risk(session: AsyncSession, company: Company, contacts:
     action = RecoveryAction(
         recovery_case_id=case.id,
         action_type=RecoveryActionType.SEND_EMAIL,
+        recommended_action_type=RecoveryActionType.SEND_EMAIL,
         status=RecoveryActionStatus.EXECUTED,
         proposed_by=ProposedBy.AI,
         sequence_number=1,
@@ -219,6 +226,7 @@ async def scenario_a_low_risk(session: AsyncSession, company: Company, contacts:
             policy_name="MAX_EMAIL_REMINDERS",
             decision=PolicyDecisionResult.APPROVED,
             reason="Reminder count (1) below MAX_EMAIL_REMINDERS (3); amount below high-value review threshold.",
+            rule=RULE_REMINDER_APPROVED,
             evaluated_at=opened_at,
         )
     )
@@ -305,6 +313,7 @@ async def scenario_b_medium_risk(session: AsyncSession, company: Company, contac
     action1 = RecoveryAction(
         recovery_case_id=case.id,
         action_type=RecoveryActionType.SEND_EMAIL,
+        recommended_action_type=RecoveryActionType.SEND_EMAIL,
         status=RecoveryActionStatus.EXECUTED,
         proposed_by=ProposedBy.AI,
         sequence_number=1,
@@ -319,6 +328,7 @@ async def scenario_b_medium_risk(session: AsyncSession, company: Company, contac
             policy_name="MAX_EMAIL_REMINDERS",
             decision=PolicyDecisionResult.APPROVED,
             reason="Reminder count (1) below MAX_EMAIL_REMINDERS (3).",
+            rule=RULE_REMINDER_APPROVED,
             evaluated_at=action1_time,
         )
     )
@@ -327,6 +337,7 @@ async def scenario_b_medium_risk(session: AsyncSession, company: Company, contac
     action2 = RecoveryAction(
         recovery_case_id=case.id,
         action_type=RecoveryActionType.SEND_PAYMENT_LINK,
+        recommended_action_type=RecoveryActionType.SEND_PAYMENT_LINK,
         status=RecoveryActionStatus.EXECUTED,
         proposed_by=ProposedBy.AI,
         sequence_number=2,
@@ -341,6 +352,7 @@ async def scenario_b_medium_risk(session: AsyncSession, company: Company, contac
             policy_name="MIN_TIME_BETWEEN_REMINDERS",
             decision=PolicyDecisionResult.APPROVED,
             reason="14 days elapsed since previous reminder, exceeding MIN_TIME_BETWEEN_REMINDERS (7 days); reminder count (2) below cap.",
+            rule=RULE_REMINDER_APPROVED,
             evaluated_at=action2_time,
         )
     )
@@ -439,26 +451,33 @@ async def scenario_c_high_risk_escalated(session: AsyncSession, company: Company
 
     action1_time = opened_at
     action1 = RecoveryAction(
-        recovery_case_id=case.id, action_type=RecoveryActionType.SEND_EMAIL, status=RecoveryActionStatus.EXECUTED,
+        recovery_case_id=case.id, action_type=RecoveryActionType.SEND_EMAIL,
+        recommended_action_type=RecoveryActionType.SEND_EMAIL, status=RecoveryActionStatus.EXECUTED,
         proposed_by=ProposedBy.AI, sequence_number=1, executed_at=action1_time, result={"simulated": True},
     )
     session.add(action1)
     await session.flush()
-    session.add(PolicyDecision(recovery_action_id=action1.id, policy_name="MAX_EMAIL_REMINDERS", decision=PolicyDecisionResult.APPROVED, reason="Reminder count (1) below cap.", evaluated_at=action1_time))
+    session.add(PolicyDecision(recovery_action_id=action1.id, policy_name="MAX_EMAIL_REMINDERS", decision=PolicyDecisionResult.APPROVED, reason="Reminder count (1) below cap.", rule=RULE_REMINDER_APPROVED, evaluated_at=action1_time))
 
     action2_time = at(due + timedelta(days=20))
     action2 = RecoveryAction(
-        recovery_case_id=case.id, action_type=RecoveryActionType.SEND_PAYMENT_LINK, status=RecoveryActionStatus.EXECUTED,
+        recovery_case_id=case.id, action_type=RecoveryActionType.SEND_PAYMENT_LINK,
+        recommended_action_type=RecoveryActionType.SEND_PAYMENT_LINK, status=RecoveryActionStatus.EXECUTED,
         proposed_by=ProposedBy.AI, sequence_number=2, executed_at=action2_time,
         result={"payment_link": "https://pay.example.com/mock/vertex-3010", "simulated": True},
     )
     session.add(action2)
     await session.flush()
-    session.add(PolicyDecision(recovery_action_id=action2.id, policy_name="HIGH_VALUE_THRESHOLD", decision=PolicyDecisionResult.REQUIRES_HUMAN_REVIEW, reason="Invoice amount (₹18,00,000) exceeds HIGH_VALUE_THRESHOLD (₹10,00,000); action logged, human review flagged in parallel.", evaluated_at=action2_time))
+    session.add(PolicyDecision(recovery_action_id=action2.id, policy_name="HIGH_VALUE_THRESHOLD", decision=PolicyDecisionResult.REQUIRES_HUMAN_REVIEW, reason="Invoice amount (₹18,00,000) exceeds HIGH_VALUE_THRESHOLD (₹10,00,000); action logged, human review flagged in parallel.", rule=RULE_HIGH_VALUE_REVIEW, evaluated_at=action2_time))
 
+    # The flagship override example: the reason text says "regardless of AI
+    # recommendation" — recommended_action_type records what that
+    # recommendation actually was (another reminder), so the AI-oversight
+    # dashboard has a real, non-zero override to show right after reseeding.
     action3_time = at(due + timedelta(days=45))
     action3 = RecoveryAction(
-        recovery_case_id=case.id, action_type=RecoveryActionType.ESCALATE, status=RecoveryActionStatus.EXECUTED,
+        recovery_case_id=case.id, action_type=RecoveryActionType.ESCALATE,
+        recommended_action_type=RecoveryActionType.SEND_PAYMENT_LINK, status=RecoveryActionStatus.EXECUTED,
         proposed_by=ProposedBy.AI, sequence_number=3, executed_at=action3_time,
         result={"escalated_to": "finance-team@example.com", "simulated": True},
     )
@@ -469,6 +488,7 @@ async def scenario_c_high_risk_escalated(session: AsyncSession, company: Company
         policy_name="ESCALATION_THRESHOLD",
         decision=PolicyDecisionResult.APPROVED,
         reason="Days overdue (45 at evaluation) exceeds ESCALATION_THRESHOLD (45) and amount exceeds HIGH_VALUE_THRESHOLD; escalation forced regardless of AI recommendation.",
+        rule=RULE_HIGH_VALUE_OVERDUE_FORCED_ESCALATE,
         evaluated_at=action3_time,
     ))
 
@@ -547,12 +567,13 @@ async def scenario_d_promise_to_pay(session: AsyncSession, company: Company, con
 
     action1_time = opened_at
     action1 = RecoveryAction(
-        recovery_case_id=case.id, action_type=RecoveryActionType.SEND_EMAIL, status=RecoveryActionStatus.EXECUTED,
+        recovery_case_id=case.id, action_type=RecoveryActionType.SEND_EMAIL,
+        recommended_action_type=RecoveryActionType.SEND_EMAIL, status=RecoveryActionStatus.EXECUTED,
         proposed_by=ProposedBy.AI, sequence_number=1, executed_at=action1_time, result={"simulated": True},
     )
     session.add(action1)
     await session.flush()
-    session.add(PolicyDecision(recovery_action_id=action1.id, policy_name="MAX_EMAIL_REMINDERS", decision=PolicyDecisionResult.APPROVED, reason="Reminder count (1) below cap.", evaluated_at=action1_time))
+    session.add(PolicyDecision(recovery_action_id=action1.id, policy_name="MAX_EMAIL_REMINDERS", decision=PolicyDecisionResult.APPROVED, reason="Reminder count (1) below cap.", rule=RULE_REMINDER_APPROVED, evaluated_at=action1_time))
 
     response_time = at(due + timedelta(days=2))
     session.add(CommunicationLog(
@@ -571,13 +592,14 @@ async def scenario_d_promise_to_pay(session: AsyncSession, company: Company, con
 
     action2_time = at(due + timedelta(days=3))
     action2 = RecoveryAction(
-        recovery_case_id=case.id, action_type=RecoveryActionType.TRACK_PROMISE_TO_PAY, status=RecoveryActionStatus.EXECUTED,
+        recovery_case_id=case.id, action_type=RecoveryActionType.TRACK_PROMISE_TO_PAY,
+        recommended_action_type=RecoveryActionType.TRACK_PROMISE_TO_PAY, status=RecoveryActionStatus.EXECUTED,
         proposed_by=ProposedBy.AI, sequence_number=2, executed_at=action2_time,
         result={"promised_date": promise_date.isoformat(), "promised_amount": "320000.00"},
     )
     session.add(action2)
     await session.flush()
-    session.add(PolicyDecision(recovery_action_id=action2.id, policy_name="PROMISE_TO_PAY_RULES", decision=PolicyDecisionResult.APPROVED, reason="Promised date is within MAX_RECOVERY_DAYS window; tracking accepted.", evaluated_at=action2_time))
+    session.add(PolicyDecision(recovery_action_id=action2.id, policy_name="PROMISE_TO_PAY_RULES", decision=PolicyDecisionResult.APPROVED, reason="Promised date is within MAX_RECOVERY_DAYS window; tracking accepted.", rule=RULE_NO_RESTRICTION, evaluated_at=action2_time))
 
     session.add(PromiseToPay(
         recovery_case_id=case.id,
@@ -651,12 +673,13 @@ async def scenario_e_recovered(session: AsyncSession, company: Company, contacts
     await session.flush()
 
     action = RecoveryAction(
-        recovery_case_id=case.id, action_type=RecoveryActionType.SEND_EMAIL, status=RecoveryActionStatus.EXECUTED,
+        recovery_case_id=case.id, action_type=RecoveryActionType.SEND_EMAIL,
+        recommended_action_type=RecoveryActionType.SEND_EMAIL, status=RecoveryActionStatus.EXECUTED,
         proposed_by=ProposedBy.AI, sequence_number=1, executed_at=opened_at, result={"simulated": True},
     )
     session.add(action)
     await session.flush()
-    session.add(PolicyDecision(recovery_action_id=action.id, policy_name="MAX_EMAIL_REMINDERS", decision=PolicyDecisionResult.APPROVED, reason="Reminder count (1) below cap.", evaluated_at=opened_at))
+    session.add(PolicyDecision(recovery_action_id=action.id, policy_name="MAX_EMAIL_REMINDERS", decision=PolicyDecisionResult.APPROVED, reason="Reminder count (1) below cap.", rule=RULE_REMINDER_APPROVED, evaluated_at=opened_at))
 
     session.add(Payment(
         invoice_id=invoice.id, amount=Decimal("95000.00"), payment_date=payment_time,

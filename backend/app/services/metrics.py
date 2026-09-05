@@ -11,7 +11,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Invoice, RecoveryCase
+from app.models import Company, Invoice, PolicyDecision, RecoveryAction, RecoveryCase
 from app.models.enums import RecoveryCaseStatus
 
 ACTIVE_STATUSES = [RecoveryCaseStatus.OPEN, RecoveryCaseStatus.MONITORING, RecoveryCaseStatus.ESCALATED]
@@ -26,6 +26,25 @@ class DashboardMetrics:
     escalated_cases: int
     average_days_overdue: float | None
     cases_by_risk_level: dict[str, int]
+
+
+@dataclass
+class PolicyOverrideExample:
+    case_id: str
+    company_name: str
+    invoice_number: str
+    recommended_action_type: str
+    action_type: str
+    rule: str | None
+
+
+@dataclass
+class PolicyOverrideStats:
+    total_evaluated: int
+    override_count: int
+    override_rate: float | None
+    by_rule: dict[str, int]
+    examples: list[PolicyOverrideExample]
 
 
 async def get_dashboard_metrics(session: AsyncSession) -> DashboardMetrics:
@@ -79,4 +98,82 @@ async def get_dashboard_metrics(session: AsyncSession) -> DashboardMetrics:
         escalated_cases=escalated_cases,
         average_days_overdue=average_days_overdue,
         cases_by_risk_level=cases_by_risk_level,
+    )
+
+
+async def get_policy_override_stats(session: AsyncSession) -> PolicyOverrideStats:
+    """AI-vs-policy divergence: how often the deterministic policy engine's
+    final_action differs from what was recommended, and by which rule.
+
+    Only counts actions with a recorded recommended_action_type — rows
+    created before that column existed (see the policy-eval-columns
+    migration) have it as NULL and are excluded rather than treated as
+    "not overridden", since that would be undercounting, not a fact.
+
+    by_rule is scoped to genuine overrides only (recommended != actual) —
+    grouping every evaluated action by rule would bury the divergence signal
+    under the (usually much larger) count of reminders approved as-is.
+    """
+    total_result = await session.execute(
+        select(func.count(RecoveryAction.id)).where(RecoveryAction.recommended_action_type.is_not(None))
+    )
+    total_evaluated = total_result.scalar_one()
+
+    is_override = RecoveryAction.recommended_action_type != RecoveryAction.action_type
+
+    override_result = await session.execute(
+        select(func.count(RecoveryAction.id)).where(
+            RecoveryAction.recommended_action_type.is_not(None), is_override
+        )
+    )
+    override_count = override_result.scalar_one()
+
+    override_rate = (override_count / total_evaluated) if total_evaluated else None
+
+    by_rule_result = await session.execute(
+        select(PolicyDecision.rule, func.count(PolicyDecision.id))
+        .join(RecoveryAction, RecoveryAction.id == PolicyDecision.recovery_action_id)
+        .where(RecoveryAction.recommended_action_type.is_not(None), PolicyDecision.rule.is_not(None), is_override)
+        .group_by(PolicyDecision.rule)
+    )
+    by_rule = {rule: count for rule, count in by_rule_result.all()}
+
+    # A few concrete, real examples for the dashboard's "Example: ..." line —
+    # deliberately not hardcoded to any specific seeded case, so this stays
+    # honest as live Gemini/scheduler cycles produce their own overrides.
+    examples_result = await session.execute(
+        select(
+            RecoveryCase.id,
+            Company.name,
+            Invoice.invoice_number,
+            RecoveryAction.recommended_action_type,
+            RecoveryAction.action_type,
+            PolicyDecision.rule,
+        )
+        .join(RecoveryCase, RecoveryCase.id == RecoveryAction.recovery_case_id)
+        .join(Invoice, Invoice.id == RecoveryCase.invoice_id)
+        .join(Company, Company.id == RecoveryCase.company_id)
+        .join(PolicyDecision, PolicyDecision.recovery_action_id == RecoveryAction.id)
+        .where(RecoveryAction.recommended_action_type.is_not(None), is_override)
+        .order_by(RecoveryAction.created_at.desc())
+        .limit(3)
+    )
+    examples = [
+        PolicyOverrideExample(
+            case_id=str(case_id),
+            company_name=company_name,
+            invoice_number=invoice_number,
+            recommended_action_type=recommended.value,
+            action_type=actual.value,
+            rule=rule,
+        )
+        for case_id, company_name, invoice_number, recommended, actual, rule in examples_result.all()
+    ]
+
+    return PolicyOverrideStats(
+        total_evaluated=total_evaluated,
+        override_count=override_count,
+        override_rate=override_rate,
+        by_rule=by_rule,
+        examples=examples,
     )

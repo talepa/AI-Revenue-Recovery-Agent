@@ -310,6 +310,7 @@ async def policy_check_node(state: RecoveryState, session: AsyncSession) -> dict
     action = RecoveryAction(
         recovery_case_id=case_id,
         action_type=outcome.final_action,
+        recommended_action_type=RecoveryActionType(state["recommended_action"]),
         status=RecoveryActionStatus.PROPOSED,
         proposed_by=ProposedBy.AI,
         sequence_number=seq,
@@ -329,6 +330,7 @@ async def policy_check_node(state: RecoveryState, session: AsyncSession) -> dict
             policy_name="deterministic_policy_engine",
             decision=outcome.decision,
             reason=outcome.reason,
+            rule=outcome.rule,
             evaluated_at=_now(),
         )
     )

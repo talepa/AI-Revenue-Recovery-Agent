@@ -16,7 +16,7 @@ export function LiveRefresh({ intervalMs = 5000 }: { intervalMs?: number }) {
 
   return (
     <span className="text-xs text-emerald-600">
-      Live · every {Math.round(intervalMs / 1000)}s
+      View refreshes every {Math.round(intervalMs / 1000)}s
     </span>
   );
 }

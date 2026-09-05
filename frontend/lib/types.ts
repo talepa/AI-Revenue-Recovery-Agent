@@ -80,12 +80,14 @@ export interface PolicyDecision {
   policy_name: string;
   decision: PolicyDecisionResult;
   reason: string;
+  rule: string | null;
   evaluated_at: string;
 }
 
 export interface RecoveryAction {
   id: string;
   action_type: RecoveryActionType;
+  recommended_action_type: RecoveryActionType | null;
   status: RecoveryActionStatus;
   proposed_by: "AI" | "SYSTEM" | "HUMAN";
   sequence_number: number;
@@ -186,4 +188,21 @@ export interface DetectionSummary {
   case_ids: string[];
   promises_fulfilled: number;
   promises_broken: number;
+}
+
+export interface PolicyOverrideExample {
+  case_id: string;
+  company_name: string;
+  invoice_number: string;
+  recommended_action_type: RecoveryActionType;
+  action_type: RecoveryActionType;
+  rule: string | null;
+}
+
+export interface PolicyOverrideStats {
+  total_evaluated: number;
+  override_count: number;
+  override_rate: number | null;
+  by_rule: Record<string, number>;
+  examples: PolicyOverrideExample[];
 }

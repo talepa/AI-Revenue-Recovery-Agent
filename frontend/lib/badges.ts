@@ -92,6 +92,27 @@ export function promiseStatusTone(status: PromiseToPayStatus): BadgeTone {
   }
 }
 
+// Matches app/services/policy_engine.py's RULE_* constants (persisted on
+// PolicyDecision.rule) — keep this switch in sync with that module.
+export function policyRuleTone(rule: string): BadgeTone {
+  switch (rule) {
+    case "broken_promise_forced_escalate":
+      return "red";
+    case "high_value_overdue_forced_escalate":
+    case "reminder_cap_exceeded":
+      return "orange";
+    case "escalated_suppresses_reminder":
+      return "violet";
+    case "cooldown_not_elapsed":
+    case "high_value_review":
+      return "amber";
+    case "reminder_approved":
+      return "green";
+    default:
+      return "gray";
+  }
+}
+
 export function actorTone(actor: AuditActor): BadgeTone {
   switch (actor) {
     case "AI_AGENT":

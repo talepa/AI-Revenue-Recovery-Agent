@@ -200,30 +200,45 @@ export default async function CaseDetailPage({
               <p className="text-sm text-slate-400">No actions taken yet.</p>
             ) : (
               <ol className="space-y-4">
-                {caseDetail.actions.map((action) => (
-                  <li key={action.id} className="rounded-lg border border-slate-100 p-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs font-semibold text-slate-400">
-                        #{action.sequence_number}
-                      </span>
-                      <span className="text-sm font-medium text-slate-900">
-                        {titleCase(action.action_type)}
-                      </span>
-                      <Badge tone={actionStatusTone(action.status)}>{titleCase(action.status)}</Badge>
-                      {action.executed_at && (
-                        <span className="text-xs text-slate-400">
-                          {formatDateTime(action.executed_at)}
+                {caseDetail.actions.map((action) => {
+                  const overridden =
+                    action.recommended_action_type !== null &&
+                    action.recommended_action_type !== action.action_type;
+                  return (
+                    <li key={action.id} className="rounded-lg border border-slate-100 p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-semibold text-slate-400">
+                          #{action.sequence_number}
                         </span>
-                      )}
-                    </div>
-                    {action.policy_decisions.map((pd) => (
-                      <div key={pd.id} className="mt-2 flex items-start gap-2 text-xs">
-                        <Badge tone={policyDecisionTone(pd.decision)}>{titleCase(pd.decision)}</Badge>
-                        <span className="text-slate-500">{pd.reason}</span>
+                        <span className="text-sm font-medium text-slate-900">
+                          {titleCase(action.action_type)}
+                        </span>
+                        <Badge tone={actionStatusTone(action.status)}>{titleCase(action.status)}</Badge>
+                        {action.executed_at && (
+                          <span className="text-xs text-slate-400">
+                            {formatDateTime(action.executed_at)}
+                          </span>
+                        )}
                       </div>
-                    ))}
-                  </li>
-                ))}
+                      {overridden && (
+                        <p className="mt-2 text-xs text-amber-700">
+                          AI suggested{" "}
+                          <span className="font-semibold">
+                            {titleCase(action.recommended_action_type!)}
+                          </span>
+                          {" → "}policy overrode to{" "}
+                          <span className="font-semibold">{titleCase(action.action_type)}</span>
+                        </p>
+                      )}
+                      {action.policy_decisions.map((pd) => (
+                        <div key={pd.id} className="mt-2 flex items-start gap-2 text-xs">
+                          <Badge tone={policyDecisionTone(pd.decision)}>{titleCase(pd.decision)}</Badge>
+                          <span className="text-slate-500">{pd.reason}</span>
+                        </div>
+                      ))}
+                    </li>
+                  );
+                })}
               </ol>
             )}
           </Section>

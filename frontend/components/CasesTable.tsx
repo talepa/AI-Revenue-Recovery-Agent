@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Badge } from "@/components/Badge";
 import { caseStatusTone, riskTone } from "@/lib/badges";
-import { formatCurrency, formatPercent, titleCase } from "@/lib/format";
+import { formatCurrency, formatPercent, humanizeActionType, titleCase } from "@/lib/format";
 import type { RecoveryCaseListItem } from "@/lib/types";
 
 export function CasesTable({ cases }: { cases: RecoveryCaseListItem[] }) {
@@ -56,9 +56,9 @@ export function CasesTable({ cases }: { cases: RecoveryCaseListItem[] }) {
               <td className="px-4 py-3 tabular-nums text-slate-600">{c.days_overdue}d</td>
               <td className="px-4 py-3">
                 {c.risk_level ? (
-                  <Badge tone={riskTone(c.risk_level)}>{c.risk_level}</Badge>
+                  <Badge tone={riskTone(c.risk_level)}>{titleCase(c.risk_level)}</Badge>
                 ) : (
-                  <Badge tone="gray">UNSCORED</Badge>
+                  <Badge tone="gray">Unscored</Badge>
                 )}
                 {c.recovery_probability && (
                   <span className="ml-2 text-xs text-slate-400">
@@ -70,7 +70,7 @@ export function CasesTable({ cases }: { cases: RecoveryCaseListItem[] }) {
                 <Badge tone={caseStatusTone(c.status)}>{titleCase(c.status)}</Badge>
               </td>
               <td className="px-4 py-3 text-slate-600">
-                {c.current_action ? titleCase(c.current_action) : "—"}
+                {c.current_action ? humanizeActionType(c.current_action) : "—"}
               </td>
               <td className="px-4 py-3 tabular-nums text-slate-900">
                 {Number(c.recovered_amount) > 0 ? formatCurrency(c.recovered_amount) : "—"}
